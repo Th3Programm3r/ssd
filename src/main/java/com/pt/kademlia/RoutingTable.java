@@ -11,7 +11,7 @@ import java.net.http.HttpResponse;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import com.pt.Auction.Auction;
 
 
 public class RoutingTable {
@@ -28,7 +28,8 @@ public class RoutingTable {
 
     public RoutingTable() {}
 
-
+    private List<Auction> auctions= new ArrayList<>();;
+    private List<Auction> participatingAuctions= new ArrayList<>();;
 
     public RoutingTable(Node localNode) {
         this.localNode = localNode;
@@ -46,7 +47,6 @@ public class RoutingTable {
         nodeIdToAddressMap.put(node.getId(), new InetSocketAddress(node.getIp(), node.getPort()));
         int index = getBucketIndex(node.getId());
         buckets.get(index).addNode(node);
-        sendAddNotificationSameBucket(index,node);
     }
 
     public void addNodeWithClosestNode(Node node, Node closestNode) {
@@ -248,5 +248,24 @@ public class RoutingTable {
         return null;
     }
 
+    public List<Auction> getAuctions() {
+        return auctions;
+    }
+
+    public void setAuctions(List<Auction> auctions) {
+        this.auctions = auctions;
+    }
+
+    public List<Auction> getParticipatingAuctions() {
+        return participatingAuctions;
+    }
+
+    public void setParticipatingAuctions(List<Auction> participatingAuctions) {
+        this.participatingAuctions = participatingAuctions;
+    }
+
+    public void addAuction(Auction auction) {
+        auctions.add(auction);
+    }
 
 }

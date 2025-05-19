@@ -2,6 +2,7 @@ package com.pt.kademlia;
 
 import com.pt.Auction.Auction;
 import com.pt.Utils;
+import com.pt.grpc.GrpcClient;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
@@ -15,6 +16,9 @@ import kademlia.Kademlia.FindRequest;
 import kademlia.Kademlia.NodeGrpc;
 import kademlia.Kademlia.AuctionGrpc;
 import kademlia.Kademlia.AuctionResponse;
+import kademlia.Kademlia.PrintRoutingTableResponse;
+
+import java.util.List;
 
 
 public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImplBase{
@@ -37,10 +41,25 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void addNode(NodeGrpc request, StreamObserver<AddNodeResponse> responseObserver) {
-        Node node = new Node(request.getIp(), request.getPort());
-        routingTable.addNode(node);
+        Node newNode = new Node(request.getIp(), request.getPort());
+        routingTable.addNode(newNode);
+
+        for(KBucket kBucket: routingTable.getBuckets()) {
+            for (Node peer : kBucket.getNodes()) {
+                if (!peer.getId().equals(newNode.getId())) {
+                    try {
+                        GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                        client.sendNode(newNode);
+                        System.out.println("Forwarded new node to: " + peer);
+                    } catch (Exception e) {
+                        System.err.println("Failed to notify " + peer + ": " + e.getMessage());
+                    }
+                }
+            }
+        }
+
         AddNodeResponse response = AddNodeResponse.newBuilder()
-                .setMessage("Node added: " + node.getId())
+                .setMessage("Node added: " + newNode.getId()+" and propagated")
                 .build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
@@ -83,22 +102,21 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void broadcastAuction(AuctionGrpc auction, StreamObserver<AuctionResponse> responseObserver) {
+        Auction newAuction = Utils.convertAuctionFromProto(auction);
+        boolean exists = routingTable.getAuctions().stream()
+                .anyMatch(a -> a.getId() == newAuction.getId());
+
+        if (!exists) {
+            routingTable.addAuction(newAuction);
+        }
         for(KBucket kBucket: routingTable.getBuckets()) {
-            for (Node node : kBucket.getNodes()) {
+            for (Node peer : kBucket.getNodes()) {
                 try {
-                    ManagedChannel channel = ManagedChannelBuilder
-                            .forAddress(node.getIp(), node.getPort())
-                            .usePlaintext()
-                            .build();
-
-                    KademliaServiceGrpc.KademliaServiceBlockingStub stub =
-                            KademliaServiceGrpc.newBlockingStub(channel);
-
-                    stub.receiveAuction(auction); // Call client method
-
-                    channel.shutdownNow();
+                    GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                    client.sendAuctionTest();
+                    System.out.println("Forwarded new node to: " + peer);
                 } catch (Exception e) {
-                    System.err.println("Broadcast to " + node.getId() + " failed: " + e.getMessage());
+                    System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
                 }
             }
         }
@@ -119,6 +137,8 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         // Save it locally
         //localNode.getAuctions().add(auction);
 
+        routingTable.getAuctions().add(auction);
+
         // React to the auction (print/log/etc.)
         System.out.println("Received auction with ID: " + auction.getId());
 
@@ -130,5 +150,38 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
+
+    @Override
+    public void findNode(NodeGrpc nodeGrpc, StreamObserver<NodeGrpc> responseObserver) {
+        Node node = Utils.convertNodeFromProto(nodeGrpc);
+        Node responseNode = routingTable.findNodeByIpAndPort(node.getIp(), node.getPort());
+        NodeGrpc response = Utils.convertNodeToProto(responseNode);
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void printRoutingTable(Kademlia.Empty request, StreamObserver<PrintRoutingTableResponse> responseObserver) {
+        PrintRoutingTableResponse response = PrintRoutingTableResponse.newBuilder()
+                .setMessage(routingTable.printRoutingTableToString())
+                .build();
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getAuctions(Kademlia.Empty request, StreamObserver<Kademlia.GetAuctionsResponse> responseObserver) {
+        List<Auction> auctions = routingTable.getAuctions(); // Your local auction list
+        Kademlia.GetAuctionsResponse.Builder responseBuilder = Kademlia.GetAuctionsResponse.newBuilder();
+
+        for (Auction auction : auctions) {
+            AuctionGrpc auctionGrpcs = Utils.convertAuctionToProto(auction);
+            responseBuilder.addAuctions(auctionGrpcs.toBuilder().build());
+        }
+
+        responseObserver.onNext(responseBuilder.build());
+        responseObserver.onCompleted();
+    }
+
 
 }

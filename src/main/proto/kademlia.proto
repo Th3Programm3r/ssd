@@ -11,6 +11,9 @@ service KademliaService {
   rpc GetSelfNode(Empty) returns (NodeGrpc);
   rpc BroadcastAuction(AuctionGrpc) returns (AuctionResponse);
   rpc ReceiveAuction(AuctionGrpc) returns (AuctionResponse);
+  rpc FindNode(NodeGrpc) returns (NodeGrpc);
+  rpc PrintRoutingTable(Empty) returns (PrintRoutingTableResponse);
+  rpc GetAuctions(Empty) returns (GetAuctionsResponse);
 }
 
 message NodeGrpc {
@@ -68,5 +71,14 @@ message ProductGrpc {
 
 message AuctionResponse {
   string message = 1;
+}
+
+message PrintRoutingTableResponse {
+  string message = 1;
+}
+
+
+message GetAuctionsResponse {
+  repeated AuctionGrpc auctions = 1;
 }
 

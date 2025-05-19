@@ -30,8 +30,7 @@ public class Node {
     //Minar as transacoes
     //Enviar de volta a transacap
 
-    private List<Auction> auctions;
-    
+
 
     public Node(){
         this.ip = getLocalIp();
@@ -91,11 +90,5 @@ public class Node {
         }
     }
 
-    public List<Auction> getAuctions() {
-        return auctions;
-    }
 
-    public void setAuctions(List<Auction> auctions) {
-        this.auctions = auctions;
-    }
 }

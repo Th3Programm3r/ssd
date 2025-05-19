@@ -1,6 +1,7 @@
 package com.pt.grpc;
 
 
+import com.pt.Utils;
 import com.pt.kademlia.Node;
 
 import io.grpc.ManagedChannel;
@@ -16,6 +17,9 @@ import kademlia.Kademlia.AuctionGrpc;
 import kademlia.Kademlia.ProductGrpc;
 import kademlia.Kademlia.BidGrpc;
 import kademlia.Kademlia.AuctionResponse;
+import kademlia.Kademlia.PrintRoutingTableResponse;
+
+import java.io.IOException;
 
 
 public class GrpcClient {
@@ -75,19 +79,59 @@ public class GrpcClient {
         System.out.println(response.getMessage());
     }
 
+    public void printRoutingTable() {
+        System.out.println("Calling printRoutingTable()...");
+        PrintRoutingTableResponse response = stub.printRoutingTable(Kademlia.Empty.newBuilder().build());
+        System.out.println("TABLE: " + response.getMessage());
+    }
 
-    public static void main(String[] args){
-        GrpcClient bootstrapClient = new GrpcClient("127.0.0.1", 50051);
+    public void getAuctions() {
+        Kademlia.GetAuctionsResponse response = stub.getAuctions(Kademlia.Empty.newBuilder().build());
+        System.out.println("Auctions:");
+        for (Kademlia.AuctionGrpc auction : response.getAuctionsList()) {
+            System.out.println("Auction ID: " + auction.getId());
+            for (Kademlia.ProductGrpc product : auction.getProductsList()) {
+                System.out.println("  Product: " + product.getName() + ", Initial: " + product.getInitialPrice() + ", Final: " + product.getFinalPrice());
+            }
+            for (Kademlia.BidGrpc bid : auction.getBidsList()) {
+                System.out.println("  Bid ID: " + bid.getId() + ", Product ID: " + bid.getProductId() + ", Bidder ID: " + bid.getBidId());
+            }
+        }
+    }
 
-        Node node = new Node();
 
-        bootstrapClient.sendNode(node);
-        bootstrapClient.ping(node.getId());             // Ping the bootstrap node
+    public static void main(String[] args) throws IOException, InterruptedException {
+        // 1. Define this node’s IP and port
+        String localIp = Utils.getLocalIp();
+        int localPort = Utils.getFreePort();
+        Node localNode = new Node(localIp, localPort);
 
-        NodeGrpc closest = bootstrapClient.findClosest(node.getId());
-        System.out.println("Closest node to me: " + closest.getId());
+        // 2. Start gRPC server for this node
+        GrpcServer server = new GrpcServer(localIp, localPort);
+        server.start(); // async
+        System.out.printf("Node started: %s:%d (ID: %s)%n", localIp, localPort, localNode.getId());
 
-        bootstrapClient.sendAuctionTest();
+        // 3. Bootstrap contact
+        String bootstrapIp = "127.0.0.1";
+        int bootstrapPort = 50051;
+
+        GrpcClient bootstrapClient = new GrpcClient(bootstrapIp, bootstrapPort);
+        if (localPort != bootstrapPort) { // Don't ping yourself
+
+            bootstrapClient.sendNode(localNode);   // Add self to bootstrap’s routing table
+            bootstrapClient.printRoutingTable();
+        }
+
+        GrpcClient selfClient = new GrpcClient(localIp,localPort);
+        selfClient.printRoutingTable();
+        selfClient.sendAuctionTest();
+        bootstrapClient.getAuctions();
+
+        // 4. Keep server running
+        server.blockUntilShutdown();
+
+
+
     }
 
     //Cria id de leilao apartir de hash de timestamp atual
