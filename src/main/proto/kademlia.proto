@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package kademlia;
+
+service KademliaService {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc AddNode(NodeGrpc) returns (AddNodeResponse);
+  rpc RemoveNode(NodeGrpc) returns (RemoveNodeResponse);
+  rpc FindClosestNode(FindRequest) returns (NodeGrpc);
+  rpc GetRoutingTable(Empty) returns (RoutingTableResponse);
+  rpc GetSelfNode(Empty) returns (NodeGrpc);
+  rpc BroadcastAuction(AuctionGrpc) returns (AuctionResponse);
+  rpc ReceiveAuction(AuctionGrpc) returns (AuctionResponse);
+}
+
+message NodeGrpc {
+  string id = 1;
+  string ip = 2;
+  int32 port = 3;
+}
+
+message PingRequest {
+  string id = 1;
+}
+
+message PingResponse {
+  string message = 1;
+}
+
+message AddNodeResponse {
+  string message = 1;
+}
+
+message RemoveNodeResponse {
+  string message = 1;
+}
+
+message FindRequest {
+  string targetId = 1;
+}
+
+message Empty {}
+
+message RoutingTableResponse {
+  repeated NodeGrpc nodes = 1;
+}
+
+
+message AuctionGrpc {
+  int32 id = 1;
+  repeated BidGrpc bids = 2;
+  repeated ProductGrpc products = 3;
+  int32 hours = 4;
+}
+
+message BidGrpc {
+  int32 id = 1;
+  int32 productId = 2;
+  int32 bidId = 3;
+}
+
+message ProductGrpc {
+  int32 id = 1;
+  string name = 2;
+  float initialPrice = 3;
+  float finalPrice = 4;
+}
+
+message AuctionResponse {
+  string message = 1;
+}
+
