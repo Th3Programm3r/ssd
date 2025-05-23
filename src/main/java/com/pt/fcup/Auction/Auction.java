@@ -1,6 +1,6 @@
 package com.pt.fcup.Auction;
 
-import com.pt.fcup.BlockChain.Blockchain;
+
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -14,7 +14,6 @@ public class Auction {
     private String senderHash;
     private Instant creationTimeStamp;
     private List<String> participants;
-    Blockchain blockchain;
 
     public Auction(int id, List<Bid> bids, List<Product> products, int hoursToCloseAuction, String senderHash, Instant creationTimeStamp, List<String> participants) {
         this.id = id;
@@ -118,11 +117,4 @@ public class Auction {
         this.participants = participants;
     }
 
-    public Blockchain getBlockchain() {
-        return blockchain;
-    }
-
-    public void setBlockchain(Blockchain blockchain) {
-        this.blockchain = blockchain;
-    }
 }

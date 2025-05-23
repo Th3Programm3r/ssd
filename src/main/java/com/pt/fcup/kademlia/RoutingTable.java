@@ -11,8 +11,7 @@ import java.net.http.HttpResponse;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pt.fcup.Auction.Auction;
-import com.pt.fcup.Auction.Bid;
+import com.pt.fcup.BlockChain.BlockChain;
 
 
 public class RoutingTable {
@@ -28,11 +27,8 @@ public class RoutingTable {
     public void setLocalNode(Node localNode) { this.localNode = localNode; }
 
     public RoutingTable() {}
+    private Map<String, BlockChain> blockchains = new HashMap<>();
 
-    private List<Auction> auctions = new ArrayList<>();
-    private List<Auction> participatingAuctions = new ArrayList<>();
-
-    private HashMap<String,String> digitalSignatures=new HashMap<>();
 
     public RoutingTable(Node localNode) {
         this.localNode = localNode;
@@ -126,7 +122,7 @@ public class RoutingTable {
             if (!bucket.getNodes().isEmpty()) {
                 routingTableString+="Bucket " + i + ": ";
                 for (Node node : bucket.getNodes()) {
-                    routingTableString+="  - " + node.getId()+","+node.getIp()+","+node.getPort();
+                    routingTableString+="  - " + node.getId()+","+node.getIp()+","+node.getPort()+","+node.getPublicKey();
                 }
             }
         }
@@ -251,70 +247,52 @@ public class RoutingTable {
         return null;
     }
 
-    public List<Auction> getAuctions() {
-        return auctions;
+
+
+//    public void addBidToAuction(Bid newBid) {
+//        Auction targetAuction = auctions.stream()
+//                .filter(a -> a.getId() == newBid.getAuctionId())
+//                .findFirst()
+//                .orElse(null);
+//
+//        boolean bidAlreadyExists = targetAuction.getBids().stream().anyMatch(b ->
+//                b.getAuctionId() == newBid.getAuctionId() &&
+//                        b.getProductId() == newBid.getProductId() &&
+//                        b.getBidValue() == newBid.getBidValue() &&
+//                        b.getSender().equals(newBid.getSender())
+//        );
+//        if(!bidAlreadyExists) {
+//            //check if an auction has any bid if not it initializes the bid array
+//            if (targetAuction.getBids() == null) {
+//                targetAuction.setBids(new ArrayList<>());
+//            }
+//            targetAuction.getBids().add(newBid);
+//            //add the user to current list of participants of an auction
+//            if (targetAuction.getParticipants() == null || targetAuction.getParticipants().isEmpty()) {
+//                targetAuction.setParticipants(new ArrayList<>());
+//            }
+//
+//            // Add sender if not already a participant
+//            if (!targetAuction.getParticipants().contains(newBid.getSender())) {
+//                targetAuction.getParticipants().add(newBid.getSender());
+//            }
+//        }
+//    }
+//
+//    public Auction getAuctionById(int auctionId){
+//        return this.auctions.stream().filter(auction->
+//            auction.getId()==auctionId
+//        )
+//        .findFirst()
+//        .orElse(null);
+//    }
+
+
+    public Map<String, BlockChain> getBlockchains() {
+        return blockchains;
     }
 
-    public void setAuctions(List<Auction> auctions) {
-        this.auctions = auctions;
+    public void setBlockchains(Map<String, BlockChain> blockchains) {
+        this.blockchains = blockchains;
     }
-
-    public List<Auction> getParticipatingAuctions() {
-        return participatingAuctions;
-    }
-
-    public void setParticipatingAuctions(List<Auction> participatingAuctions) {
-        this.participatingAuctions = participatingAuctions;
-    }
-
-    public void addAuction(Auction auction) {
-        auctions.add(auction);
-    }
-
-    public void addParticipatingAuction(Auction auction) {
-        participatingAuctions.add(auction);
-    }
-
-    public void addBidToAuction(Bid newBid) {
-        Auction targetAuction = auctions.stream()
-                .filter(a -> a.getId() == newBid.getAuctionId())
-                .findFirst()
-                .orElse(null);
-
-        boolean bidAlreadyExists = targetAuction.getBids().stream().anyMatch(b ->
-                b.getAuctionId() == newBid.getAuctionId() &&
-                        b.getProductId() == newBid.getProductId() &&
-                        b.getBidValue() == newBid.getBidValue() &&
-                        b.getSender().equals(newBid.getSender())
-        );
-        if(!bidAlreadyExists) {
-            //check if an auction has any bid if not it initializes the bid array
-            if (targetAuction.getBids() == null) {
-                targetAuction.setBids(new ArrayList<>());
-            }
-            targetAuction.getBids().add(newBid);
-            //add the user to current list of participants of an auction
-            if (targetAuction.getParticipants() == null || targetAuction.getParticipants().isEmpty()) {
-                targetAuction.setParticipants(new ArrayList<>());
-            }
-
-            // Add sender if not already a participant
-            if (!targetAuction.getParticipants().contains(newBid.getSender())) {
-                targetAuction.getParticipants().add(newBid.getSender());
-            }
-        }
-    }
-
-    public Auction getAuctionById(int auctionId){
-        return this.auctions.stream().filter(auction->
-            auction.getId()==auctionId
-        )
-        .findFirst()
-        .orElse(null);
-    }
-
-    public void addDigitalSignature(String key,String signature){
-
-    }
-
 }

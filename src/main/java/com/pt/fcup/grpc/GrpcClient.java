@@ -4,6 +4,7 @@ package com.pt.fcup.grpc;
 import com.pt.fcup.Auction.Auction;
 import com.pt.fcup.Auction.Bid;
 import com.pt.fcup.Auction.Product;
+import com.pt.fcup.BlockChain.BlockChain;
 import com.pt.fcup.Utils;
 import com.pt.fcup.kademlia.Node;
 
@@ -21,22 +22,23 @@ import kademlia.Kademlia.BidGrpc;
 import kademlia.Kademlia.AuctionResponse;
 import kademlia.Kademlia.PrintRoutingTableResponse;
 import kademlia.Kademlia.SendBidResponse;
+import kademlia.Kademlia.Empty;
+import kademlia.Kademlia.GetAuctionsResponse;
+import kademlia.Kademlia.BlockChainMap;
+import kademlia.Kademlia.AddBlockChainsResponse;
 
 import java.io.IOException;
-import java.security.KeyPair;
-import java.security.NoSuchAlgorithmException;
-import java.security.Signature;
+import java.security.*;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Scanner;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
 public class GrpcClient {
     private final ManagedChannel channel;
     private final KademliaServiceGrpc.KademliaServiceBlockingStub stub;
+    public static PrivateKey privateKey;
+    public static PublicKey publicKey;
 
     public GrpcClient(String targetIp, int targetPort) {
         this.channel = ManagedChannelBuilder.forAddress(targetIp, targetPort)
@@ -46,17 +48,13 @@ public class GrpcClient {
     }
 
     public void ping(String myId) {
-        Kademlia.PingRequest request = PingRequest.newBuilder().setId(myId).build();
+        PingRequest request = PingRequest.newBuilder().setId(myId).build();
         PingResponse response = stub.ping(request);
         System.out.println("Ping: " + response.getMessage());
     }
 
     public void sendNode(Node node) {
-        NodeGrpc protoNode = NodeGrpc.newBuilder()
-                .setId(node.getId())
-                .setIp(node.getIp())
-                .setPort(node.getPort())
-                .build();
+        NodeGrpc protoNode = Utils.convertNodeToProto(node);
         AddNodeResponse response = stub.addNode(protoNode);
         System.out.println("Add Node: " + response.getMessage());
     }
@@ -67,7 +65,7 @@ public class GrpcClient {
     }
 
     public Node getTargetNode() {
-        NodeGrpc protoNode = stub.getSelfNode(Kademlia.Empty.newBuilder().build());
+        NodeGrpc protoNode = stub.getSelfNode(Empty.newBuilder().build());
         return new Node(protoNode.getId(), protoNode.getIp(), protoNode.getPort());
     }
 
@@ -79,21 +77,21 @@ public class GrpcClient {
 
     public void printRoutingTable() {
         System.out.println("Calling printRoutingTable()...");
-        PrintRoutingTableResponse response = stub.printRoutingTable(Kademlia.Empty.newBuilder().build());
+        PrintRoutingTableResponse response = stub.printRoutingTable(Empty.newBuilder().build());
         System.out.println("TABLE: " + response.getMessage());
     }
 
     public List<Auction> getAuctions() {
-        Kademlia.GetAuctionsResponse response = stub.getAuctions(Kademlia.Empty.newBuilder().build());
+        GetAuctionsResponse response = stub.getAuctions(Empty.newBuilder().build());
         List<Auction> auctions = new ArrayList<Auction>();
         //System.out.println("Auctions:");
-        for (Kademlia.AuctionGrpc auction : response.getAuctionsList()) {
+        for (AuctionGrpc auction : response.getAuctionsList()) {
             auctions.add(Utils.convertAuctionFromProto(auction));
 //            System.out.println("Auction ID: " + auction.getId());
-//            for (Kademlia.ProductGrpc product : auction.getProductsList()) {
+//            for (ProductGrpc product : auction.getProductsList()) {
 //                System.out.println("  Product: " + product.getName() + ", Initial: " + product.getInitialPrice() + ", Final: " + product.getFinalPrice());
 //            }
-//            for (Kademlia.BidGrpc bid : auction.getBidsList()) {
+//            for (BidGrpc bid : auction.getBidsList()) {
 //                System.out.println("  Bid ID: " + bid.getId() + ", Product ID: " + bid.getProductId() + ", Bidder ID: " + bid.getBidId());
 //            }
         }
@@ -113,6 +111,16 @@ public class GrpcClient {
         return "";
     }
 
+    public BlockChainMap getBlockChains(){
+        BlockChainMap response = stub.getBlockChains(Empty.newBuilder().build());
+        return response;
+    }
+
+    public void sendBlockChains(BlockChainMap blockChainMap){
+        AddBlockChainsResponse response = stub.addBlockChains(blockChainMap);
+        System.out.println(response.getMessage());
+    }
+
     //Adcionar o auction o objeto bid, retirar do objeto bid o auction porque ja nao vai ser preciso
     //Fazer um Challenge, verificar se o hash esta correto, e verificar assinatura
     //Adcionar um auction e adcionar a blochain e propagar pela rede a blockChain e nao a auction, remover lista de auctions da blockchain
@@ -123,11 +131,17 @@ public class GrpcClient {
     //Quando um no é iniciado ele pede da rede o estado atual da blockchain
 
     public static void main(String[] args) throws IOException, InterruptedException, NoSuchAlgorithmException {
+        // Generate RSA key pair
+        KeyPair keyPair = Utils.generateKeyPair();
+        privateKey = keyPair.getPrivate();
+        publicKey = keyPair.getPublic();
+
         Scanner input = new Scanner(System.in);
         // 1. Define this node’s IP and port
         String localIp = Utils.getLocalIp();
         int localPort = Utils.getFreePort();
-        Node localNode = new Node(localIp, localPort);
+        String encondedPulicKey=Utils.encodePublicKey(publicKey);
+        Node localNode = new Node(localIp, localPort, encondedPulicKey);
 
         // 2. Start gRPC server for this node
         GrpcServer server = new GrpcServer(localIp, localPort);
@@ -138,30 +152,17 @@ public class GrpcClient {
         String bootstrapIp = "127.0.0.1";
         int bootstrapPort = 50051;
 
-//        KeyPair privateKey=localNode.generateKeyPair();
-//        Signature signature = Signature.getInstance("SHA256withRSA");
-//        signature.initSign(privateKey);
-//        signature.update(bidData.getBytes());
-//        byte[] signedData = signature.sign();
+
 
 
         GrpcClient bootstrapClient = new GrpcClient(bootstrapIp, bootstrapPort);
-        if (localPort != bootstrapPort) { // Don't ping yourself
-            bootstrapClient.sendNode(localNode);   // Add self to bootstrap’s routing table
+        if (localPort != bootstrapPort) {
+            bootstrapClient.sendNode(localNode);
         }
 
         GrpcClient selfClient = new GrpcClient(localIp,localPort);
-        //selfClient.printRoutingTable();
-//        Auction auction = new Auction();
-//        Product product = new Product(1,"Phone",100.0f,150.0f);
-//        Bid bid = new Bid(1,1,2);
-//        auction.addProduct(product);
-//        auction.addBid(bid);
-//        bootstrapClient.sendAuction(auction);
-//        System.out.println("BOOSTRAP AUCTION");
-//        bootstrapClient.getAuctions();
-//        System.out.println("SELF AUCTIONS");
-//        selfClient.getAuctions();
+        BlockChainMap blockChainMap = bootstrapClient.getBlockChains();
+        selfClient.sendBlockChains(blockChainMap);
 
         while (true) {
             Thread.sleep(1000);

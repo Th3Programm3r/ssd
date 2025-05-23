@@ -1,5 +1,6 @@
 package com.pt.fcup.BlockChain;
 
+import com.pt.fcup.Auction.Auction;
 import com.pt.fcup.Auction.Bid;
 
 import java.security.MessageDigest;
@@ -8,14 +9,14 @@ import java.security.NoSuchAlgorithmException;
 public class Block {
     private int index;
     private long timestamp;
-    private Bid bid;
+    private Auction auction;
     private String previousHash;
     private String hash;
 
-    public Block(int index, long timestamp, Bid bid, String previousHash, String hash) {
+    public Block(int index, long timestamp, Auction auction, String previousHash, String hash) {
         this.index = index;
         this.timestamp = timestamp;
-        this.bid = bid;
+        this.auction = auction;
         this.previousHash = previousHash;
         this.hash = hash;
     }
@@ -23,21 +24,21 @@ public class Block {
     public Block() {
         this.index = 0;
         this.timestamp = 0L;
-        this.bid = new Bid();
+        this.auction = new Auction();
         this.previousHash = "";
         this.hash = "";
     }
 
-    public Block(int index, long timestamp, Bid bid, String previousHash) {
+    public Block(int index, long timestamp, Auction auction, String previousHash) {
         this.index = index;
         this.timestamp = timestamp;
-        this.bid = bid;
+        this.auction = auction;
         this.previousHash = previousHash;
         this.hash = calculateHash();
     }
 
     public String calculateHash() {
-        String data = index + timestamp + bid.toString() + previousHash;
+        String data = index + timestamp + auction.toString() + previousHash;
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hashBytes = digest.digest(data.getBytes());
@@ -67,13 +68,6 @@ public class Block {
         this.timestamp = timestamp;
     }
 
-    public Bid getBid() {
-        return bid;
-    }
-
-    public void setBid(Bid bid) {
-        this.bid = bid;
-    }
 
     public String getPreviousHash() {
         return previousHash;
@@ -89,5 +83,13 @@ public class Block {
 
     public void setHash(String hash) {
         this.hash = hash;
+    }
+
+    public Auction getAuction() {
+        return auction;
+    }
+
+    public void setAuction(Auction auction) {
+        this.auction = auction;
     }
 }

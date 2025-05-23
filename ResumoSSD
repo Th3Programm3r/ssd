@@ -1,0 +1,7 @@
+Inicialmente é gerado um par de chave privado e chave publica que vai ser utilizado para enviar transaçoes para a blockchain
+
+Depois é criado um no que é gerado apartir do par ip e porta que é escolhido aleatoriamente e é adcionado a chave publica e depois
+envia o no para o no bootstrap para poder se ligar a rede kademlia.
+
+Apos estar connectado ao kademlia ele pede ao no bootstrap a blockchain para poder obter todos os leiloes e lances que forem criados antes dele 
+se juntar a rede e guarda na sua rede interna esses dados

@@ -17,12 +17,15 @@ service KademliaService {
   rpc SendBid(BidGrpc) returns (SendBidResponse);
   rpc BroadcastBlock(BlockGrpc) returns (BlockAck);
   rpc GetLastBlockHashFromAuction(BidGrpc) returns (BlockHash);
+  rpc AddBlockChains(BlockChainMap) returns (AddBlockChainsResponse);
+  rpc GetBlockChains(Empty) returns (BlockChainMap);
 }
 
 message NodeGrpc {
   string id = 1;
   string ip = 2;
   int32 port = 3;
+  string publicKey=4;
 }
 
 message PingRequest {
@@ -98,7 +101,7 @@ message SendBidResponse{
 message BlockGrpc {
   int32 index = 1;
   int64 timestamp = 2;
-  BidGrpc bid = 3;
+  AuctionGrpc auction = 3;
   string previousHash = 4;
   string hash = 5;
 }
@@ -110,5 +113,19 @@ message BlockAck {
 
 message BlockHash{
   string blockHash = 1;
+}
+
+
+message BlockChainMap {
+  map<string, BlockChainGrpc> blockChain = 1;
+}
+
+message AddBlockChainsResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message BlockChainGrpc{
+  repeated BlockGrpc chain=1;
 }
 

@@ -1,14 +1,14 @@
 package com.pt.fcup.BlockChain;
 
-import com.pt.fcup.Auction.Bid;
+import com.pt.fcup.Auction.Auction;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class Blockchain {
+public class BlockChain {
     private List<Block> chain = new ArrayList<>();
 
-    public Blockchain() {
+    public BlockChain() {
         chain.add(createGenesisBlock());
     }
 
@@ -20,12 +20,12 @@ public class Blockchain {
         return chain.get(chain.size() - 1);
     }
 
-    public void addBlock(Bid bid) {
+    public void addBlock(Auction auction) {
         Block lastBlock = getLatestBlock();
         Block newBlock = new Block(
                 lastBlock.getIndex() + 1,
                 System.currentTimeMillis(),
-                bid,lastBlock
+                auction,lastBlock
                 .getHash()
         );
         chain.add(newBlock);
@@ -61,4 +61,7 @@ public class Blockchain {
         return true;
     }
 
+    public void setChain(List<Block> chain) {
+        this.chain = chain;
+    }
 }

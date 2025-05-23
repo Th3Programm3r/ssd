@@ -9,16 +9,14 @@ import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.UnknownHostException;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.security.*;
 
 
 public class Node {
-    private final String id;
-    private final String ip;
-    private final int port;
+    private String id;
+    private String ip;
+    private int port;
+    private String publicKey;
     //Lista Nos vizinhos em hash
     //List dAs transações e quem fex
     //Validar se a hash ta correta de acordo com a lista interna das hashs das transaçoes
@@ -38,18 +36,30 @@ public class Node {
         this.id = generateNodeId(this.ip, this.port);
     }
 
-    @JsonCreator
-    public Node(@JsonProperty("ip") String ip, @JsonProperty("port") int port) {
+    public Node(String ip, int port) {
         this.ip = ip;
         this.port = port;
         this.id = generateNodeId(ip, port);
     }
 
-    @JsonCreator
+    public Node(String ip, int port, String publicKey) {
+        this.ip = ip;
+        this.port = port;
+        this.id = generateNodeId(ip, port);
+        this.publicKey = publicKey;
+    }
+
     public Node(String id, String ip, int port) {
         this.ip = ip;
         this.port = port;
         this.id = id;
+    }
+
+    public Node(String id, String ip, int port, String publicKey) {
+        this.id = id;
+        this.ip = ip;
+        this.port = port;
+        this.publicKey = publicKey;
     }
 
     public String getId() {
@@ -90,11 +100,23 @@ public class Node {
         }
     }
 
-    public static KeyPair generateKeyPair() throws NoSuchAlgorithmException {
-        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-        keyGen.initialize(2048); // secure size
-        return keyGen.generateKeyPair();
+    public void setId(String id) {
+        this.id = id;
     }
 
+    public void setIp(String ip) {
+        this.ip = ip;
+    }
 
+    public void setPort(int port) {
+        this.port = port;
+    }
+
+    public String getPublicKey() {
+        return publicKey;
+    }
+
+    public void setPublicKey(String publicKey) {
+        this.publicKey = publicKey;
+    }
 }

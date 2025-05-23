@@ -7,20 +7,26 @@ import com.pt.fcup.Auction.Auction;
 import com.pt.fcup.Auction.Bid;
 import com.pt.fcup.Auction.Product;
 import com.pt.fcup.BlockChain.Block;
+import com.pt.fcup.BlockChain.BlockChain;
 import com.pt.fcup.kademlia.Node;
+import kademlia.Kademlia;
 import kademlia.Kademlia.AuctionGrpc;
 import kademlia.Kademlia.BidGrpc;
 import kademlia.Kademlia.ProductGrpc;
 import kademlia.Kademlia.NodeGrpc;
 import kademlia.Kademlia.BlockGrpc;
+import kademlia.Kademlia.BlockChainMap;
+import kademlia.Kademlia.BlockChainGrpc;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.UnknownHostException;
+import java.security.*;
+import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
@@ -83,7 +89,7 @@ public class Utils {
     }
 
     public static Node convertNodeFromProto(NodeGrpc proto) {
-        Node node = new Node(proto.getId(),proto.getIp(),proto.getPort());
+        Node node = new Node(proto.getId(),proto.getIp(),proto.getPort(),proto.getPublicKey());
 
         return node;
     }
@@ -93,6 +99,7 @@ public class Utils {
                 .setId(node.getId())
                 .setIp(node.getIp())
                 .setPort(node.getPort())
+                .setPublicKey(node.getPublicKey())
                 .build();
 
         return response;
@@ -155,16 +162,91 @@ public class Utils {
     }
 
     public static BlockGrpc convertBlockToProto(Block block) {
-        BidGrpc bidGrpc = convertBidToProto(block.getBid());
+        AuctionGrpc auctionGrpc = convertAuctionToProto(block.getAuction());
         BlockGrpc response = BlockGrpc.newBuilder()
                 .setIndex(block.getIndex())
                 .setTimestamp(block.getTimestamp())
-                .setBid(bidGrpc)
+                .setAuction(auctionGrpc)
                 .setPreviousHash(block.getPreviousHash())
                 .setHash(block.getHash())
                 .build();
 
         return response;
     }
+
+    public static Block convertBlockFromProto(BlockGrpc block) {
+        Block response = new Block(
+                block.getIndex(),
+                block.getTimestamp(),
+                convertAuctionFromProto(block.getAuction()),
+                block.getPreviousHash(),
+                block.getHash());
+
+        return response;
+    }
+
+
+    public static KeyPair generateKeyPair() throws NoSuchAlgorithmException {
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048); // secure size
+        return keyGen.generateKeyPair();
+    }
+
+    public static String encodePublicKey(PublicKey publicKey) {
+        return Base64.getEncoder().encodeToString(publicKey.getEncoded());
+    }
+
+    public static PublicKey decodePublicKey(String base64Key) throws Exception {
+        byte[] keyBytes = Base64.getDecoder().decode(base64Key);
+        X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        return kf.generatePublic(spec);
+    }
+
+    public static BlockChainGrpc convertBlockChainToProto(BlockChain blockchain) {
+        BlockChainGrpc.Builder builder = BlockChainGrpc.newBuilder();
+
+        for(Block block: blockchain.getChain()){
+            builder.addChain(convertBlockToProto(block));
+        }
+
+        return builder.build();
+    }
+
+    public static BlockChain convertBlockChainFromProto(BlockChainGrpc blockchain) {
+        BlockChain response = new BlockChain();
+        List<Block> blocks = new ArrayList<>();
+        for(BlockGrpc block: blockchain.getChainList()){
+            blocks.add(convertBlockFromProto(block));
+        }
+        response.setChain(blocks);
+        return response;
+    }
+
+    public static BlockChainMap convertBlockChainMapToProto(Map<String, BlockChain> blockchains) {
+        BlockChainMap.Builder requestBuilder = BlockChainMap.newBuilder();
+        for (Map.Entry<String, BlockChain> entry : blockchains.entrySet()) {
+            String key = entry.getKey();
+            BlockChainGrpc blockchain = Utils.convertBlockChainToProto(entry.getValue());
+            requestBuilder.putBlockChain(key, blockchain);
+        }
+
+
+        return requestBuilder.build();
+    }
+
+    public static Map<String, BlockChain> convertBlockChainMapFromProto(Map<String, BlockChainGrpc> protoMap) {
+        Map<String, BlockChain> blockchainMap = new HashMap<>();
+        for (Map.Entry<String, BlockChainGrpc> entry : protoMap.entrySet()) {
+            String key = entry.getKey();
+            BlockChain blockchain = convertBlockChainFromProto(entry.getValue());
+            blockchainMap.put(key,blockchain);
+        }
+
+
+        return blockchainMap;
+    }
+
+
 
 }
