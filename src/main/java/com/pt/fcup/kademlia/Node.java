@@ -1,8 +1,7 @@
-package com.pt.kademlia;
+package com.pt.fcup.kademlia;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.pt.Auction.Auction;
 
 
 import java.io.IOException;
@@ -10,9 +9,10 @@ import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.UnknownHostException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.List;
 
 
 public class Node {
@@ -88,6 +88,12 @@ public class Node {
         } catch (UnknownHostException e) {
             throw new RuntimeException("Failed to get IP", e);
         }
+    }
+
+    public static KeyPair generateKeyPair() throws NoSuchAlgorithmException {
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048); // secure size
+        return keyGen.generateKeyPair();
     }
 
 

@@ -1,10 +1,11 @@
-package com.pt.kademlia;
+package com.pt.fcup.kademlia;
 
-import com.pt.Auction.Auction;
-import com.pt.Utils;
-import com.pt.grpc.GrpcClient;
-import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
+import com.pt.fcup.Auction.Auction;
+import com.pt.fcup.Auction.Bid;
+import com.pt.fcup.BlockChain.Block;
+import com.pt.fcup.BlockChain.Blockchain;
+import com.pt.fcup.Utils;
+import com.pt.fcup.grpc.GrpcClient;
 import io.grpc.stub.StreamObserver;
 import kademlia.Kademlia;
 import kademlia.Kademlia.PingRequest;
@@ -17,6 +18,11 @@ import kademlia.Kademlia.NodeGrpc;
 import kademlia.Kademlia.AuctionGrpc;
 import kademlia.Kademlia.AuctionResponse;
 import kademlia.Kademlia.PrintRoutingTableResponse;
+import kademlia.Kademlia.BidGrpc;
+import kademlia.Kademlia.SendBidResponse;
+import kademlia.Kademlia.BlockGrpc;
+import kademlia.Kademlia.BlockAck;
+import kademlia.Kademlia.BlockHash;
 
 import java.util.List;
 
@@ -109,11 +115,15 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         if (!exists) {
             routingTable.addAuction(newAuction);
         }
+        if(routingTable.getLocalNode().getId().equals(newAuction.getSenderHash())){
+            routingTable.addParticipatingAuction(newAuction);
+        }
+
         for(KBucket kBucket: routingTable.getBuckets()) {
             for (Node peer : kBucket.getNodes()) {
                 try {
                     GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                    client.sendAuctionTest();
+                    client.sendAuction(newAuction);
                     System.out.println("Forwarded new node to: " + peer);
                 } catch (Exception e) {
                     System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
@@ -129,27 +139,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         responseObserver.onCompleted();
     }
 
-    @Override
-    public void receiveAuction(AuctionGrpc request, StreamObserver<AuctionResponse> responseObserver) {
-        // Convert proto Auction to your local Auction object
-        Auction auction = Utils.convertAuctionFromProto(request);
 
-        // Save it locally
-        //localNode.getAuctions().add(auction);
-
-        routingTable.getAuctions().add(auction);
-
-        // React to the auction (print/log/etc.)
-        System.out.println("Received auction with ID: " + auction.getId());
-
-        // Respond
-        AuctionResponse response = AuctionResponse.newBuilder()
-                //.setMessage("Auction received by node yrdy" + localNode.getId())
-                .setMessage("Auction received by node yrdy")
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
-    }
 
     @Override
     public void findNode(NodeGrpc nodeGrpc, StreamObserver<NodeGrpc> responseObserver) {
@@ -173,13 +163,56 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     public void getAuctions(Kademlia.Empty request, StreamObserver<Kademlia.GetAuctionsResponse> responseObserver) {
         List<Auction> auctions = routingTable.getAuctions(); // Your local auction list
         Kademlia.GetAuctionsResponse.Builder responseBuilder = Kademlia.GetAuctionsResponse.newBuilder();
-
         for (Auction auction : auctions) {
             AuctionGrpc auctionGrpcs = Utils.convertAuctionToProto(auction);
             responseBuilder.addAuctions(auctionGrpcs.toBuilder().build());
         }
 
         responseObserver.onNext(responseBuilder.build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void sendBid(BidGrpc bidGrpc, StreamObserver<SendBidResponse> responseObserver) {
+        Bid newBid = Utils.convertBidFromProto(bidGrpc);
+        routingTable.addBidToAuction(newBid);
+
+        SendBidResponse response = SendBidResponse.newBuilder()
+                .setMessage("Broadcasted Bid to all nodes")
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void broadcastBlock(BlockGrpc request, StreamObserver<BlockAck> responseObserver) {
+        // Convert from proto Block to local Block class
+        Bid bid = Utils.convertBidFromProto(request.getBid());
+        Block block = new Block(
+                request.getIndex(),
+                request.getTimestamp(),
+                bid,
+                request.getPreviousHash()
+        );
+        Auction auction = routingTable.getAuctionById(bid.getAuctionId());
+        Blockchain blockchain = auction.getBlockchain();
+        if (blockchain.validateAndAdd(block)) {
+            responseObserver.onNext(BlockAck.newBuilder().setSuccess(true).build());
+        } else {
+            responseObserver.onNext(BlockAck.newBuilder().setSuccess(false).build());
+        }
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void getLastBlockHashFromAuction(BidGrpc bidGrpc, StreamObserver<BlockHash> responseObserver) {
+        Bid bid = Utils.convertBidFromProto(bidGrpc);
+        Auction auction = routingTable.getAuctionById(bid.getAuctionId());
+        Blockchain blockchain = auction.getBlockchain();
+        Block block = blockchain.getLatestBlock();
+
+        responseObserver.onNext(BlockHash.newBuilder().setBlockHash(block.getHash()).build());
         responseObserver.onCompleted();
     }
 

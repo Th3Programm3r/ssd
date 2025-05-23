@@ -1,11 +1,9 @@
-package com.pt.kademlia;
+package com.pt.fcup.kademlia;
 
 
 
 import java.math.BigInteger;
 import java.util.LinkedList;
-import java.util.Objects;
-
 
 
 public class KBucket {

@@ -1,4 +1,11 @@
-package com.pt.Auction;
+package com.pt.fcup.Auction;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
 
 public class Product {
     private int id;
@@ -6,6 +13,7 @@ public class Product {
     private Float initialPrice;
     private Float finalPrice;
 
+    // Constructors
     public Product(int id, String name, Float initialPrice, Float finalPrice) {
         this.id = id;
         this.name = name;
@@ -13,6 +21,25 @@ public class Product {
         this.finalPrice = finalPrice;
     }
 
+    public Product() {
+        this.id=0;
+        this.name="";
+        this.initialPrice=0f;
+        this.finalPrice=0f;
+    }
+
+    public Product(String name) {
+        this.id=generateIdFromName(name);
+        this.name=name;
+        this.initialPrice=0f;
+        this.finalPrice=0f;
+    }
+
+    public Product(int id, String name, Float initialPrice) {
+        this(id, name, initialPrice, 0f);
+    }
+
+    // Getters and setters
     public int getId() {
         return id;
     }
@@ -45,14 +72,7 @@ public class Product {
         this.finalPrice = finalPrice;
     }
 
-    public Product(int id, String name, Float initialPrice) {
-        this.id = id;
-        this.name = name;
-        this.initialPrice = initialPrice;
-        this.finalPrice = 0f;
+    private int generateIdFromName(String name) {
+        return name.toLowerCase().hashCode();
     }
-
-
-
-
 }

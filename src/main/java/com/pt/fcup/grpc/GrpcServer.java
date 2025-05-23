@@ -1,9 +1,8 @@
-package com.pt.grpc;
+package com.pt.fcup.grpc;
 
-import com.pt.Utils;
-import com.pt.kademlia.KademliaServiceImpl;
-import com.pt.kademlia.Node;
-import com.pt.kademlia.RoutingTable;
+import com.pt.fcup.kademlia.KademliaServiceImpl;
+import com.pt.fcup.kademlia.Node;
+import com.pt.fcup.kademlia.RoutingTable;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 

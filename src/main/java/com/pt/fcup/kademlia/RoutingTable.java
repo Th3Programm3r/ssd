@@ -1,4 +1,4 @@
-package com.pt.kademlia;
+package com.pt.fcup.kademlia;
 
 
 
@@ -11,7 +11,8 @@ import java.net.http.HttpResponse;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.pt.Auction.Auction;
+import com.pt.fcup.Auction.Auction;
+import com.pt.fcup.Auction.Bid;
 
 
 public class RoutingTable {
@@ -28,8 +29,10 @@ public class RoutingTable {
 
     public RoutingTable() {}
 
-    private List<Auction> auctions= new ArrayList<>();;
-    private List<Auction> participatingAuctions= new ArrayList<>();;
+    private List<Auction> auctions = new ArrayList<>();
+    private List<Auction> participatingAuctions = new ArrayList<>();
+
+    private HashMap<String,String> digitalSignatures=new HashMap<>();
 
     public RoutingTable(Node localNode) {
         this.localNode = localNode;
@@ -266,6 +269,52 @@ public class RoutingTable {
 
     public void addAuction(Auction auction) {
         auctions.add(auction);
+    }
+
+    public void addParticipatingAuction(Auction auction) {
+        participatingAuctions.add(auction);
+    }
+
+    public void addBidToAuction(Bid newBid) {
+        Auction targetAuction = auctions.stream()
+                .filter(a -> a.getId() == newBid.getAuctionId())
+                .findFirst()
+                .orElse(null);
+
+        boolean bidAlreadyExists = targetAuction.getBids().stream().anyMatch(b ->
+                b.getAuctionId() == newBid.getAuctionId() &&
+                        b.getProductId() == newBid.getProductId() &&
+                        b.getBidValue() == newBid.getBidValue() &&
+                        b.getSender().equals(newBid.getSender())
+        );
+        if(!bidAlreadyExists) {
+            //check if an auction has any bid if not it initializes the bid array
+            if (targetAuction.getBids() == null) {
+                targetAuction.setBids(new ArrayList<>());
+            }
+            targetAuction.getBids().add(newBid);
+            //add the user to current list of participants of an auction
+            if (targetAuction.getParticipants() == null || targetAuction.getParticipants().isEmpty()) {
+                targetAuction.setParticipants(new ArrayList<>());
+            }
+
+            // Add sender if not already a participant
+            if (!targetAuction.getParticipants().contains(newBid.getSender())) {
+                targetAuction.getParticipants().add(newBid.getSender());
+            }
+        }
+    }
+
+    public Auction getAuctionById(int auctionId){
+        return this.auctions.stream().filter(auction->
+            auction.getId()==auctionId
+        )
+        .findFirst()
+        .orElse(null);
+    }
+
+    public void addDigitalSignature(String key,String signature){
+
     }
 
 }

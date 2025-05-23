@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package kademlia;
+import "google/protobuf/timestamp.proto";
 
 service KademliaService {
   rpc Ping(PingRequest) returns (PingResponse);
@@ -10,10 +11,12 @@ service KademliaService {
   rpc GetRoutingTable(Empty) returns (RoutingTableResponse);
   rpc GetSelfNode(Empty) returns (NodeGrpc);
   rpc BroadcastAuction(AuctionGrpc) returns (AuctionResponse);
-  rpc ReceiveAuction(AuctionGrpc) returns (AuctionResponse);
   rpc FindNode(NodeGrpc) returns (NodeGrpc);
   rpc PrintRoutingTable(Empty) returns (PrintRoutingTableResponse);
   rpc GetAuctions(Empty) returns (GetAuctionsResponse);
+  rpc SendBid(BidGrpc) returns (SendBidResponse);
+  rpc BroadcastBlock(BlockGrpc) returns (BlockAck);
+  rpc GetLastBlockHashFromAuction(BidGrpc) returns (BlockHash);
 }
 
 message NodeGrpc {
@@ -53,13 +56,18 @@ message AuctionGrpc {
   int32 id = 1;
   repeated BidGrpc bids = 2;
   repeated ProductGrpc products = 3;
-  int32 hours = 4;
+  int32 hoursToCloseAuction = 4;
+  string senderHash = 5;
+  google.protobuf.Timestamp creationTimeStamp = 6;
+  repeated string participants= 7;
 }
 
 message BidGrpc {
   int32 id = 1;
   int32 productId = 2;
-  int32 bidId = 3;
+  float bidValue = 3;
+  string sender = 4;
+  int32 auctionId = 5;
 }
 
 message ProductGrpc {
@@ -80,5 +88,27 @@ message PrintRoutingTableResponse {
 
 message GetAuctionsResponse {
   repeated AuctionGrpc auctions = 1;
+}
+
+message SendBidResponse{
+  string message = 1;
+}
+
+
+message BlockGrpc {
+  int32 index = 1;
+  int64 timestamp = 2;
+  BidGrpc bid = 3;
+  string previousHash = 4;
+  string hash = 5;
+}
+
+message BlockAck {
+  bool success = 1;
+  string message = 2;
+}
+
+message BlockHash{
+  string blockHash = 1;
 }
 
