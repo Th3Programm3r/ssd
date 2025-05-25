@@ -1,7 +1,35 @@
 Inicialmente é gerado um par de chave privado e chave publica que vai ser utilizado para enviar transaçoes para a blockchain
 
 Depois é criado um no que é gerado apartir do par ip e porta que é escolhido aleatoriamente e é adcionado a chave publica e depois
-envia o no para o no bootstrap para poder se ligar a rede kademlia.
+envia o no para o no bootstrap para poder se ligar a rede kademlia, o no bootstrap ao receber o no adciona ao bucket que tiver xor mais perto do novo no
+e adciona a um HashMap que vai guardar o hash do como chave e o ip e a porta como o valor para depois se conseguir apanhar o no apartir da hash dele e também guarda
+a chave publica do no e retorna a nuonce utilizada para validar os blocos da blockchain.
 
 Apos estar connectado ao kademlia ele pede ao no bootstrap a blockchain para poder obter todos os leiloes e lances que forem criados antes dele 
 se juntar a rede e guarda na sua rede interna esses dados
+
+Apos criar um leilao ele cria um bloco com informações do leilão e assina com o a chave privada daquele no ,mina aquele bloco com a nuonce definida e envia ao no boostrap,
+o no bootstrap ao receber verifica se assinatura esta correta e divulga aos restantes nos da rede, um no ao receber o bloco caso não tiver o
+no que criou o bloco pede o no que derivou o hash ao no bootstrap e adciona o utilizador a sua rede kademlia.
+
+O listar todos os leilões envia um pedido ao no bootstrap para buscar em todas as blockchains e em cada blockchain correspondente a um leilão
+ele apanha o ultimo bloco, que vai ter a informação mais atualizada de cada leilão, e adciona a uma lista de leilão que vai ser retornado
+
+Ao fazer um novo lance ele cria um bloco com informações do do ultimo bloco daquele leilão, adciona o novo lance a lista de lances daquele leilão e assina com o a chave privada
+daquele no, mina aquele bloco com a nuonce definida e envia ao no boostrap, o no bootstrap ao receber verifica se assinatura esta correta, valida aquele novo bloco, checando se
+o challenge foi resolvido corretamente, se o hash anterior definido no novo bloco esta correto, e divulga aos restantes nos da rede, um no ao receber o bloco caso o hash anterior
+for differente do que ele tem na sua blockchain ele pede a blockchain para aquele leilao e atualiza internamente.
+
+
+
+
+
+
+
+
+
+-Ver se ao criar um leilao com um utilizador em que um outro for registado apos se ele busca este no no no bootstrap
+-Ver se ao criar um leilao com uma assinatura falsa o que acontece
+
+
+

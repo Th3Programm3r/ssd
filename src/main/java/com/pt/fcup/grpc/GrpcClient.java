@@ -4,6 +4,7 @@ package com.pt.fcup.grpc;
 import com.pt.fcup.Auction.Auction;
 import com.pt.fcup.Auction.Bid;
 import com.pt.fcup.Auction.Product;
+import com.pt.fcup.BlockChain.Block;
 import com.pt.fcup.BlockChain.BlockChain;
 import com.pt.fcup.Utils;
 import com.pt.fcup.kademlia.Node;
@@ -26,6 +27,8 @@ import kademlia.Kademlia.Empty;
 import kademlia.Kademlia.GetAuctionsResponse;
 import kademlia.Kademlia.BlockChainMap;
 import kademlia.Kademlia.AddBlockChainsResponse;
+import kademlia.Kademlia.BlockGrpc;
+import kademlia.Kademlia.HashGrpc;
 
 import java.io.IOException;
 import java.security.*;
@@ -69,9 +72,9 @@ public class GrpcClient {
         return new Node(protoNode.getId(), protoNode.getIp(), protoNode.getPort());
     }
 
-    public void sendAuction(Auction auction){
-        AuctionGrpc convertedAuction = Utils.convertAuctionToProto(auction);
-        AuctionResponse response = stub.broadcastAuction(convertedAuction);
+    public void sendAuction(Block block){
+        BlockGrpc convertedBlock = Utils.convertBlockToProto(block);
+        AuctionResponse response = stub.broadcastAuction(convertedBlock);
         System.out.println(response.getMessage());
     }
 
@@ -98,39 +101,55 @@ public class GrpcClient {
         return auctions;
     }
 
-    public void sendBid(Bid bid){
-        BidGrpc bidGrpc = Utils.convertBidToProto(bid);
-        SendBidResponse response = stub.sendBid(bidGrpc);
+    public void sendBid(Block block){
+        BlockGrpc blockGrpc = Utils.convertBlockToProto(block);
+        SendBidResponse response = stub.sendBid(blockGrpc);
         System.out.println(response.getMessage());
     }
 
-    public String getBlock(Bid bid){
-        BidGrpc bidGrpc = Utils.convertBidToProto(bid);
-        SendBidResponse response = stub.sendBid(bidGrpc);
-        System.out.println(response.getMessage());
-        return "";
-    }
+//    public String getBlock(Bid bid){
+//        BidGrpc bidGrpc = Utils.convertBidToProto(bid);
+//        SendBidResponse response = stub.sendBid(bidGrpc);
+//        System.out.println(response.getMessage());
+//        return "";
+//    }
 
     public BlockChainMap getBlockChains(){
         BlockChainMap response = stub.getBlockChains(Empty.newBuilder().build());
         return response;
     }
 
-    public void sendBlockChains(BlockChainMap blockChainMap){
+    public void setBlockChains(BlockChainMap blockChainMap){
         AddBlockChainsResponse response = stub.addBlockChains(blockChainMap);
         System.out.println(response.getMessage());
     }
 
-    //Adcionar o auction o objeto bid, retirar do objeto bid o auction porque ja nao vai ser preciso
-    //Fazer um Challenge, verificar se o hash esta correto, e verificar assinatura
-    //Adcionar um auction e adcionar a blochain e propagar pela rede a blockChain e nao a auction, remover lista de auctions da blockchain
-    //Quando é feito um novo lance ele adciona a rede blockchain o objecto auction e nele tem o bid
-    //o ultimo bloco vai ter o bid mais recente
-    //Quando um no é iniciado depois de ja ter sido feito um bid nao fazer nada
-    //Mas se ele receber um bid o qual não tenha um hashAnterior ele pede ao no principal para poder mostrar os dados
-    //Quando um no é iniciado ele pede da rede o estado atual da blockchain
+    public Node findNodeByHash(String hash){
+        HashGrpc hashGrpc = HashGrpc.newBuilder().setHash(hash).build();
+        NodeGrpc response = stub.findNodeByHash(hashGrpc);
+        Node node = Utils.convertNodeFromProto(response);
+        return node;
+    }
 
-    public static void main(String[] args) throws IOException, InterruptedException, NoSuchAlgorithmException {
+    public Block getLastBlockFromAuction(Auction auction){
+        AuctionGrpc auctionGrpc = Utils.convertAuctionToProto(auction);
+        BlockGrpc response = stub.getLastBlockFromAuction(auctionGrpc);
+        Block block = Utils.convertBlockFromProto(response);
+        return block;
+    }
+
+    //Quando um no é iniciado ele pede da rede o estado atual da blockchain****
+    //Adcionar o auction o objeto bid, retirar do objeto bid o auction porque ja nao vai ser preciso****
+    //Adcionar um auction e adcionar a blochain e propagar pela rede a blockChain e nao a auction, remover lista de auctions da blockchain****
+    //Quando é feito um novo lance ele adciona a rede blockchain o objecto auction e nele tem o bid****
+    //o ultimo bloco vai ter o bid mais recente****
+    //Mas se ele receber um bid o qual não tenha um hashAnterior ele pede ao no principal para poder mostrar os dados****
+    //Fazer um Challenge, verificar se o hash esta correto, e verificar assinatura****
+    //Ver se é preciso apagar um no quando não se consegue chegar a ele quando se adciona um novo no, um novo leilao e um novo lance
+    //Ver como fazer para receber notificação cada vez que se envia um novo lance a um leilão a que o utilizador pertence ou quando o leilao termina
+    //Quando o adcionar bid funcionar atualizar o codigo para o adcionar bid para os leiloes que participas
+
+    public static void main(String[] args) throws Exception {
         // Generate RSA key pair
         KeyPair keyPair = Utils.generateKeyPair();
         privateKey = keyPair.getPrivate();
@@ -149,20 +168,14 @@ public class GrpcClient {
         System.out.printf("Node started: %s:%d (ID: %s)%n", localIp, localPort, localNode.getId());
 
         // 3. Bootstrap contact
-        String bootstrapIp = "127.0.0.1";
-        int bootstrapPort = 50051;
-
-
-
-
-        GrpcClient bootstrapClient = new GrpcClient(bootstrapIp, bootstrapPort);
-        if (localPort != bootstrapPort) {
+        GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+        if (localPort != Utils.bootstrapPort) {
             bootstrapClient.sendNode(localNode);
         }
 
         GrpcClient selfClient = new GrpcClient(localIp,localPort);
         BlockChainMap blockChainMap = bootstrapClient.getBlockChains();
-        selfClient.sendBlockChains(blockChainMap);
+        selfClient.setBlockChains(blockChainMap);
 
         while (true) {
             Thread.sleep(1000);
@@ -216,7 +229,11 @@ public class GrpcClient {
                 //Fazer um sendAuction para o no bootstrap
                 Instant currentTimestamp = Instant.now();
                 Auction auction = new Auction(auctionProducts,currentTimestamp,tempo,localNode.getId());
-                bootstrapClient.sendAuction(auction);
+                Block block = new Block(0,currentTimestamp.toEpochMilli(),auction,"0");
+                String signature = Utils.signBlock(block,privateKey);
+                block.setSignature(signature);
+                block.mineBlock(Utils.difficulty);
+                bootstrapClient.sendAuction(block);
             }
             else if(option==3){
                 System.out.println("Selecione a opção pretendida");
@@ -224,7 +241,7 @@ public class GrpcClient {
                 System.out.println("2-Ver todos os leiloes em que participas");
                 int choice= input.nextInt();
                 if(choice==1){
-                    List<Auction> auctions=bootstrapClient.getAuctions();
+                    List<Auction> auctions=selfClient.getAuctions();
                     int auctionID=1;
                     for(Auction auction:auctions){
                         System.out.println("Leilão "+auctionID);
@@ -239,10 +256,10 @@ public class GrpcClient {
                             if (choice2 == 0)
                                 break;
 
+                            Auction selectedAuction = auctions.get(choice2-1);
+                            List<Bid> auctionBids = selectedAuction.getBids();
 
-                            List<Bid> auctionBids = auctions.get(choice2-1).getBids();
-                            //List<Bid> newBids = new ArrayList<>();
-                            for (Product product : auctions.get(choice2-1).getProducts()) {
+                            for (Product product : selectedAuction.getProducts()) {
                                 Bid lastBid=null;
                                 Optional<Bid> lastBidOptional = auctionBids.stream()
                                         .filter(bid -> bid.getProductId() == product.getId())
@@ -259,9 +276,19 @@ public class GrpcClient {
                                 System.out.println("Introduza o valor do teu lance para o produto ou 0 caso não esteja interessado");
                                 Float valor = input.nextFloat();
                                 if (valor>0f && lastBid!=null && valor > lastBid.getBidValue() || valor>0f && valor > product.getInitialPrice()) {
-                                    Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor,localNode.getId(),auctions.get(choice2-1).getId());
+                                    Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor,localNode.getId(),selectedAuction.getId());
                                     //SEND BID USING GRPC
-                                    bootstrapClient.sendBid(newBid);
+                                    Instant currentTimestamp = Instant.now();
+                                    Block lastBlock = selfClient.getLastBlockFromAuction(selectedAuction);
+                                    Auction updatedAuction = lastBlock.getAuction();
+                                    updatedAuction.addBid(newBid);
+
+                                    Block block = new Block(lastBlock.getIndex()+1,currentTimestamp.toEpochMilli(),updatedAuction,lastBlock.getHash());
+                                    String signature = Utils.signBlock(block,privateKey);
+                                    block.setSignature(signature);
+                                    block.mineBlock(Utils.difficulty);
+
+                                    bootstrapClient.sendBid(block);
                                 } else {
                                     System.out.println("Valor do lance tem de ser maior do que o lance atual");
                                 }
@@ -288,10 +315,10 @@ public class GrpcClient {
                             if (choice2 == 0)
                                 break;
 
+                            Auction selectedAuction = auctions.get(choice2-1);
+                            List<Bid> auctionBids = selectedAuction.getBids();
 
-                            List<Bid> auctionBids = auctions.get(choice2-1).getBids();
-                            //List<Bid> newBids = new ArrayList<>();
-                            for (Product product : auctions.get(choice2-1).getProducts()) {
+                            for (Product product : selectedAuction.getProducts()) {
                                 Bid lastBid=null;
                                 Optional<Bid> lastBidOptional = auctionBids.stream()
                                         .filter(bid -> bid.getProductId() == product.getId())
@@ -308,17 +335,10 @@ public class GrpcClient {
                                 System.out.println("Introduza o valor do teu lance para o produto ou 0 caso não esteja interessado");
                                 Float valor = input.nextFloat();
                                 if (valor>0f && lastBid!=null && valor > lastBid.getBidValue() || valor>0f && valor > product.getInitialPrice()) {
-                                    Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor,localNode.getId(),auctions.get(choice2-1).getId());
+                                    Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor,localNode.getId(),selectedAuction.getId());
                                     //SEND BID USING GRPC
-                                    //Ao iniciar um novo no criar a sua assinatura digital e envia para o bootstrap para ele poder guardar no seu hashmap
-                                    //Antes de enviar um bid buscar o hash do ultimo bloco para poder criar um novo bloco e enviar no bid a assinatura em vez de
-                                    //enviar o seu id
-                                    //Para buscar a ultima assinatura adcionan a chave publica dele no que ele vai enviar
-                                    //para buscar a ultima transcação
-                                    //quando ele envia um novo bloco ele verifica se a hash é valida
-                                    //depois implementar tmb uma forma de verificar se o ultimo bid para uma auction foi feito pela mesma pessoa
-                                    //e nao propagar e criar bloco para evitar ataques de repetição
-                                    bootstrapClient.sendBid(newBid);
+
+//                                    bootstrapClient.sendBid(newBid);
                                 } else {
                                     System.out.println("Valor do lance tem de ser maior do que o lance atual");
                                 }
@@ -351,10 +371,4 @@ public class GrpcClient {
 
     }
 
-    //Cria id de leilao apartir de hash de timestamp atual
-    //Ora que ta envia um leilao adciona na objecto leilao no de quenha que envia leilao asi pa na ora de
-    //Ora ki é pa lista leilao, busca de service leiloes que sta registado na nha no
-    //Cria na service grpc um service que ta busca no apartir de informaçoes de um no
-    //Tenta cria um leilao e faze broadcast del pa tudo no que sta na rede
-    //Depos djobi se ta guarda leilao e routingTable na um ficheiro json e sempre que programa ta começa le quel ficheiro
 }

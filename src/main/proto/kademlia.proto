@@ -10,15 +10,16 @@ service KademliaService {
   rpc FindClosestNode(FindRequest) returns (NodeGrpc);
   rpc GetRoutingTable(Empty) returns (RoutingTableResponse);
   rpc GetSelfNode(Empty) returns (NodeGrpc);
-  rpc BroadcastAuction(AuctionGrpc) returns (AuctionResponse);
+  rpc BroadcastAuction(BlockGrpc) returns (AuctionResponse);
   rpc FindNode(NodeGrpc) returns (NodeGrpc);
   rpc PrintRoutingTable(Empty) returns (PrintRoutingTableResponse);
   rpc GetAuctions(Empty) returns (GetAuctionsResponse);
-  rpc SendBid(BidGrpc) returns (SendBidResponse);
+  rpc SendBid(BlockGrpc) returns (SendBidResponse);
   rpc BroadcastBlock(BlockGrpc) returns (BlockAck);
-  rpc GetLastBlockHashFromAuction(BidGrpc) returns (BlockHash);
+  rpc GetLastBlockFromAuction(AuctionGrpc) returns (BlockGrpc);
   rpc AddBlockChains(BlockChainMap) returns (AddBlockChainsResponse);
   rpc GetBlockChains(Empty) returns (BlockChainMap);
+  rpc FindNodeByHash(HashGrpc) returns (NodeGrpc);
 }
 
 message NodeGrpc {
@@ -104,6 +105,7 @@ message BlockGrpc {
   AuctionGrpc auction = 3;
   string previousHash = 4;
   string hash = 5;
+  string signature = 6;
 }
 
 message BlockAck {
@@ -117,7 +119,7 @@ message BlockHash{
 
 
 message BlockChainMap {
-  map<string, BlockChainGrpc> blockChain = 1;
+  map<int32, BlockChainGrpc> blockChain = 1;
 }
 
 message AddBlockChainsResponse {
@@ -127,5 +129,9 @@ message AddBlockChainsResponse {
 
 message BlockChainGrpc{
   repeated BlockGrpc chain=1;
+}
+
+message HashGrpc {
+  string hash=1;
 }
 

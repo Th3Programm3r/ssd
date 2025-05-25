@@ -31,6 +31,9 @@ import java.util.stream.Collectors;
 
 
 public class Utils {
+    public static final int difficulty = 4;
+    public static final String bootstrapIp = "127.0.0.1";
+    public static final int bootstrapPort = 50051;
     public static Auction convertAuctionFromProto(AuctionGrpc proto) {
         List<Bid> bids = proto.getBidsList().stream()
                 .map(b -> new Bid(b.getId(), b.getProductId(), b.getBidValue(),b.getSender(),b.getAuctionId()))
@@ -60,7 +63,8 @@ public class Utils {
                 .setId(auction.getId())
                 .setSenderHash(auction.getSenderHash())
                 .setCreationTimeStamp(protoTimestamp)
-                .setHoursToCloseAuction(auction.getHoursToCloseAuction());
+                .setHoursToCloseAuction(auction.getHoursToCloseAuction()
+        );
 
 
         for (Bid bid : auction.getBids()) {
@@ -180,7 +184,9 @@ public class Utils {
                 block.getTimestamp(),
                 convertAuctionFromProto(block.getAuction()),
                 block.getPreviousHash(),
-                block.getHash());
+                block.getHash(),
+                block.getSignature()
+        );
 
         return response;
     }
@@ -223,10 +229,10 @@ public class Utils {
         return response;
     }
 
-    public static BlockChainMap convertBlockChainMapToProto(Map<String, BlockChain> blockchains) {
+    public static BlockChainMap convertBlockChainMapToProto(Map<Integer, BlockChain> blockchains) {
         BlockChainMap.Builder requestBuilder = BlockChainMap.newBuilder();
-        for (Map.Entry<String, BlockChain> entry : blockchains.entrySet()) {
-            String key = entry.getKey();
+        for (Map.Entry<Integer, BlockChain> entry : blockchains.entrySet()) {
+            int key = entry.getKey();
             BlockChainGrpc blockchain = Utils.convertBlockChainToProto(entry.getValue());
             requestBuilder.putBlockChain(key, blockchain);
         }
@@ -235,16 +241,34 @@ public class Utils {
         return requestBuilder.build();
     }
 
-    public static Map<String, BlockChain> convertBlockChainMapFromProto(Map<String, BlockChainGrpc> protoMap) {
-        Map<String, BlockChain> blockchainMap = new HashMap<>();
-        for (Map.Entry<String, BlockChainGrpc> entry : protoMap.entrySet()) {
-            String key = entry.getKey();
+    public static Map<Integer, BlockChain> convertBlockChainMapFromProto(Map<Integer, BlockChainGrpc> protoMap) {
+        Map<Integer, BlockChain> blockchainMap = new HashMap<>();
+        for (Map.Entry<Integer, BlockChainGrpc> entry : protoMap.entrySet()) {
+            int key = entry.getKey();
             BlockChain blockchain = convertBlockChainFromProto(entry.getValue());
             blockchainMap.put(key,blockchain);
         }
 
 
         return blockchainMap;
+    }
+
+    public static String signBlock(Block block, PrivateKey privateKey) throws Exception {
+        String data = block.toString(); // consistent serialization
+        Signature signature = Signature.getInstance("SHA256withRSA");
+        signature.initSign(privateKey);
+        signature.update(data.getBytes());
+        byte[] signedBytes = signature.sign();
+        return Base64.getEncoder().encodeToString(signedBytes);
+    }
+
+    public static boolean verifyBlock(Block block, String signatureBase64, PublicKey publicKey) throws Exception {
+        String data = block.toString(); // same string format
+        Signature signature = Signature.getInstance("SHA256withRSA");
+        signature.initVerify(publicKey);
+        signature.update(data.getBytes());
+        byte[] signatureBytes = Base64.getDecoder().decode(signatureBase64);
+        return signature.verify(signatureBytes);
     }
 
 

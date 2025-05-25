@@ -11,6 +11,7 @@ import java.net.http.HttpResponse;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pt.fcup.BlockChain.Block;
 import com.pt.fcup.BlockChain.BlockChain;
 
 
@@ -19,6 +20,7 @@ public class RoutingTable {
     private List<KBucket> buckets = new ArrayList<>();
     private Node localNode;
     private Map<String, InetSocketAddress> nodeIdToAddressMap = new HashMap<>();
+    private Map<String, String> nodeHashPublicKey = new HashMap<>();
 
     public List<KBucket> getBuckets() { return buckets; }
     public void setBuckets(List<KBucket> buckets) { this.buckets = buckets; }
@@ -27,7 +29,7 @@ public class RoutingTable {
     public void setLocalNode(Node localNode) { this.localNode = localNode; }
 
     public RoutingTable() {}
-    private Map<String, BlockChain> blockchains = new HashMap<>();
+    private Map<Integer, BlockChain> blockchains = new HashMap<>();
 
 
     public RoutingTable(Node localNode) {
@@ -44,6 +46,7 @@ public class RoutingTable {
 
     public void addNode(Node node) {
         nodeIdToAddressMap.put(node.getId(), new InetSocketAddress(node.getIp(), node.getPort()));
+        nodeHashPublicKey.put(node.getId(),node.getPublicKey());
         int index = getBucketIndex(node.getId());
         buckets.get(index).addNode(node);
     }
@@ -288,11 +291,43 @@ public class RoutingTable {
 //    }
 
 
-    public Map<String, BlockChain> getBlockchains() {
+    public Map<Integer, BlockChain> getBlockchains() {
         return blockchains;
     }
 
-    public void setBlockchains(Map<String, BlockChain> blockchains) {
+    public void setBlockchains(Map<Integer, BlockChain> blockchains) {
         this.blockchains = blockchains;
+    }
+
+    public Map<String, InetSocketAddress> getNodeIdToAddressMap() {
+        return nodeIdToAddressMap;
+    }
+
+    public void setNodeIdToAddressMap(Map<String, InetSocketAddress> nodeIdToAddressMap) {
+        this.nodeIdToAddressMap = nodeIdToAddressMap;
+    }
+
+    public Map<String, String> getNodeHashPublicKey() {
+        return nodeHashPublicKey;
+    }
+
+    public void setNodeHashPublicKey(Map<String, String> nodeHashPublicKey) {
+        this.nodeHashPublicKey = nodeHashPublicKey;
+    }
+
+    public String getPublicKeyByHash(String hash){
+        return this.nodeHashPublicKey.get(hash);
+    }
+
+    public Block getLastBlockFromAuction(int auctionId){
+        return this.blockchains.get(auctionId).getLatestBlock();
+    }
+
+    public void addToBlockChains(int key,BlockChain blockChain){
+        this.blockchains.put(key,blockChain);
+    }
+
+    public String addBlockToBlockChain(int key,Block block){
+        return this.blockchains.get(key).validateAndAdd(block);
     }
 }

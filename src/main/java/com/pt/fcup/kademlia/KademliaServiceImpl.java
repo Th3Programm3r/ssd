@@ -1,10 +1,13 @@
 package com.pt.fcup.kademlia;
 
 
+import com.pt.fcup.Auction.Auction;
 import com.pt.fcup.Auction.Bid;
+import com.pt.fcup.BlockChain.Block;
 import com.pt.fcup.BlockChain.BlockChain;
 import com.pt.fcup.Utils;
 import com.pt.fcup.grpc.GrpcClient;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import kademlia.Kademlia;
 import kademlia.Kademlia.PingRequest;
@@ -26,6 +29,11 @@ import kademlia.Kademlia.BlockChainMap;
 import kademlia.Kademlia.Empty;
 import kademlia.Kademlia.AddBlockChainsResponse;
 import kademlia.Kademlia.BlockChainGrpc;
+import kademlia.Kademlia.HashGrpc;
+
+import java.security.PublicKey;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 
@@ -109,39 +117,71 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     }
 
     @Override
-    public void broadcastAuction(AuctionGrpc auction, StreamObserver<AuctionResponse> responseObserver) {
-//        Auction newAuction = Utils.convertAuctionFromProto(auction);
-//        boolean exists = routingTable.getAuctions().stream()
-//                .anyMatch(a -> a.getId() == newAuction.getId());
-//
-//        if (!exists) {
-//            routingTable.addAuction(newAuction);
-//        }
-//        if(routingTable.getLocalNode().getId().equals(newAuction.getSenderHash())){
-//            routingTable.addParticipatingAuction(newAuction);
-//        }
-//
-//        for(KBucket kBucket: routingTable.getBuckets()) {
-//            for (Node peer : kBucket.getNodes()) {
-//                try {
-//                    GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-//                    client.sendAuction(newAuction);
-//                    System.out.println("Forwarded new node to: " + peer);
-//                } catch (Exception e) {
-//                    System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
-//                }
-//            }
-//        }
+    public void broadcastAuction(BlockGrpc blockGrpc, StreamObserver<AuctionResponse> responseObserver) {
+        try {
+            Block block = Utils.convertBlockFromProto(blockGrpc);
+            String blockSignature = block.getSignature();
 
-        AuctionResponse response = AuctionResponse.newBuilder()
-                .setMessage("Broadcasted Auction to all nodes")
-                .build();
+            String blockHash = block.getAuction().getSenderHash();
+            String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+            PublicKey publicKey = null;
+            if (publicKeyString != null && !publicKeyString.isEmpty()) {
+                publicKey = Utils.decodePublicKey(publicKeyString);
+            }
+
+            // If public key is missing, request from bootstrap first
+            if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
+                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+
+                Node node = bootstrapClient.findNodeByHash(blockHash);
+                if (node != null) {
+                    routingTable.addNode(node);
+                    publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                    publicKey = Utils.decodePublicKey(publicKeyString);
+                }
+            }
+
+            // Only add to blockchain if verification is successful
+            if (publicKey != null && Utils.verifyBlock(block, blockSignature, publicKey)) {
+                BlockChain blockChain = new BlockChain();
+                blockChain.addBlockToBlockChain(block);
+                routingTable.addToBlockChains(block.getAuction().getId(),blockChain);
+            } else {
+                System.err.println("Invalid block signature or missing public key");
+            }
+
+            // Broadcast to peers
+            for (KBucket kBucket : routingTable.getBuckets()) {
+                for (Node peer : kBucket.getNodes()) {
+                    try {
+                        GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                        client.sendAuction(block);
+                        System.out.println("Forwarded new node to: " + peer);
+                    } catch (Exception e) {
+                        System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                    }
+                }
+            }
+
+            // Send success response
+            AuctionResponse response = AuctionResponse.newBuilder()
+                    .setMessage("Broadcasted Auction to all nodes")
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+
+        } catch (Exception e) {
+            // Proper gRPC error handling
+            responseObserver.onError(
+                    Status.INTERNAL
+                            .withDescription("Failed to process broadcastAuction: " + e.getMessage())
+                            .withCause(e)
+                            .asRuntimeException()
+            );
+        }
     }
-
-
 
     @Override
     public void findNode(NodeGrpc nodeGrpc, StreamObserver<NodeGrpc> responseObserver) {
@@ -163,28 +203,127 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void getAuctions(Empty request, StreamObserver<Kademlia.GetAuctionsResponse> responseObserver) {
-//        List<Auction> auctions = routingTable.getAuctions(); // Your local auction list
+        List<Auction> auctions = new ArrayList<>();
+        for (Map.Entry<Integer, BlockChain> entry : routingTable.getBlockchains().entrySet()) {
+            Block block = entry.getValue().getLatestBlock();
+            auctions.add(block.getAuction());
+        }
+
+
         Kademlia.GetAuctionsResponse.Builder responseBuilder = Kademlia.GetAuctionsResponse.newBuilder();
-//        for (Auction auction : auctions) {
-//            AuctionGrpc auctionGrpcs = Utils.convertAuctionToProto(auction);
-//            responseBuilder.addAuctions(auctionGrpcs.toBuilder().build());
-//        }
+        for (Auction auction : auctions) {
+            AuctionGrpc auctionGrpcs = Utils.convertAuctionToProto(auction);
+            responseBuilder.addAuctions(auctionGrpcs.toBuilder().build());
+        }
 
         responseObserver.onNext(responseBuilder.build());
         responseObserver.onCompleted();
     }
 
     @Override
-    public void sendBid(BidGrpc bidGrpc, StreamObserver<SendBidResponse> responseObserver) {
-        Bid newBid = Utils.convertBidFromProto(bidGrpc);
-//        routingTable.addBidToAuction(newBid);
+    public void sendBid(BlockGrpc blockGrpc, StreamObserver<SendBidResponse> responseObserver) {
+        try {
+            Block block = Utils.convertBlockFromProto(blockGrpc);
+            String blockSignature = block.getSignature();
 
-        SendBidResponse response = SendBidResponse.newBuilder()
-                .setMessage("Broadcasted Bid to all nodes")
-                .build();
+            String blockHash = block.getAuction().getSenderHash();
+            String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+            PublicKey publicKey = null;
+            if (publicKeyString != null && !publicKeyString.isEmpty()) {
+                publicKey = Utils.decodePublicKey(publicKeyString);
+            }
+
+            // If public key is missing, request from bootstrap first
+            if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
+                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+
+                Node node = bootstrapClient.findNodeByHash(blockHash);
+                if (node != null) {
+                    routingTable.addNode(node);
+                    publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                    publicKey = Utils.decodePublicKey(publicKeyString);
+                }
+            }
+
+            // Only add to blockchain if verification is successful
+            if (publicKey != null && Utils.verifyBlock(block, blockSignature, publicKey)) {
+                String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
+                if(result.equals("")){
+                    // Broadcast to peers
+                    for (KBucket kBucket : routingTable.getBuckets()) {
+                        for (Node peer : kBucket.getNodes()) {
+                            try {
+                                GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                                client.sendAuction(block);
+                                System.out.println("Forwarded new node to: " + peer);
+                            } catch (Exception e) {
+                                System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                            }
+                        }
+                    }
+
+                    SendBidResponse response = SendBidResponse.newBuilder()
+                            .setMessage("Broadcasted Bid to all nodes")
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                }
+                else if(result.equals("Previous hash mismatch")){
+                    GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                    Block lastBlock = bootstrapClient.getLastBlockFromAuction(block.getAuction());
+                    if(lastBlock!=null && lastBlock.getHash().equals(block.getPreviousHash())){
+                        routingTable.addBlockToBlockChain(block.getAuction().getId(),lastBlock);
+                        result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
+                        // Broadcast to peers
+                        for (KBucket kBucket : routingTable.getBuckets()) {
+                            for (Node peer : kBucket.getNodes()) {
+                                try {
+                                    GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                                    client.sendAuction(block);
+                                    System.out.println("Forwarded new node to: " + peer);
+                                } catch (Exception e) {
+                                    System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                                }
+                            }
+                        }
+
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage("Broadcasted Bid to all nodes")
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+                    }
+                    else{
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage(result)
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+                    }
+                }
+                else {
+                    SendBidResponse response = SendBidResponse.newBuilder()
+                            .setMessage(result)
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                }
+            }
+        } catch (Exception e) {
+            // Proper gRPC error handling
+            responseObserver.onError(
+                    Status.INTERNAL
+                            .withDescription("Failed to process broadcastAuction: " + e.getMessage())
+                            .withCause(e)
+                            .asRuntimeException()
+            );
+        }
+
     }
 
     @Override
@@ -210,21 +349,19 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     }
 
     @Override
-    public void getLastBlockHashFromAuction(BidGrpc bidGrpc, StreamObserver<BlockHash> responseObserver) {
-//        Bid bid = Utils.convertBidFromProto(bidGrpc);
-//        Auction auction = routingTable.getAuctionById(bid.getAuctionId());
-//        Blockchain blockchain = auction.getBlockchain();
-//        Block block = blockchain.getLatestBlock();
-//
-//        responseObserver.onNext(BlockHash.newBuilder().setBlockHash(block.getHash()).build());
-        responseObserver.onNext(BlockHash.newBuilder().setBlockHash("").build());
+    public void getLastBlockFromAuction(AuctionGrpc auctionGrpc, StreamObserver<BlockGrpc> responseObserver) {
+        Auction auction = Utils.convertAuctionFromProto(auctionGrpc);
+        Block block = routingTable.getLastBlockFromAuction(auction.getId());
+        BlockGrpc blockGrpc = Utils.convertBlockToProto(block);
+
+        responseObserver.onNext(blockGrpc);
         responseObserver.onCompleted();
     }
 
 
     @Override
     public void getBlockChains(Empty empty, StreamObserver<BlockChainMap> responseObserver) {
-        Map<String, BlockChain> blockchains = routingTable.getBlockchains();
+        Map<Integer, BlockChain> blockchains = routingTable.getBlockchains();
         BlockChainMap blockChains = Utils.convertBlockChainMapToProto(blockchains);
 
         responseObserver.onNext(blockChains);
@@ -233,11 +370,20 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void addBlockChains(BlockChainMap blockChainMap, StreamObserver<AddBlockChainsResponse> responseObserver) {
-        Map<String, BlockChainGrpc> protoMap = blockChainMap.getBlockChainMap();
-        Map<String, BlockChain> blockchains = Utils.convertBlockChainMapFromProto(protoMap);
+        Map<Integer, BlockChainGrpc> protoMap = blockChainMap.getBlockChainMap();
+        Map<Integer, BlockChain> blockchains = Utils.convertBlockChainMapFromProto(protoMap);
         routingTable.setBlockchains(blockchains);
 
         responseObserver.onNext(AddBlockChainsResponse.newBuilder().setSuccess(true).setMessage("BlockChain interno buscado do no bootstrap atualizado com sucesso").build());
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void findNodeByHash(HashGrpc hashGrpc, StreamObserver<NodeGrpc> responseObserver) {
+        Node node = routingTable.findNodeByHash(hashGrpc.getHash());
+        NodeGrpc nodeGrpc = Utils.convertNodeToProto(node);
+
+        responseObserver.onNext(nodeGrpc);
         responseObserver.onCompleted();
     }
 

@@ -1,7 +1,7 @@
 package com.pt.fcup.BlockChain;
 
 import com.pt.fcup.Auction.Auction;
-import com.pt.fcup.Auction.Bid;
+
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -12,13 +12,16 @@ public class Block {
     private Auction auction;
     private String previousHash;
     private String hash;
+    private String signature;
+    private int nonce;
 
-    public Block(int index, long timestamp, Auction auction, String previousHash, String hash) {
+    public Block(int index, long timestamp, Auction auction, String previousHash, String hash, String signature) {
         this.index = index;
         this.timestamp = timestamp;
         this.auction = auction;
         this.previousHash = previousHash;
         this.hash = hash;
+        this.signature = signature;
     }
 
     public Block() {
@@ -27,6 +30,7 @@ public class Block {
         this.auction = new Auction();
         this.previousHash = "";
         this.hash = "";
+        this.signature = "";
     }
 
     public Block(int index, long timestamp, Auction auction, String previousHash) {
@@ -35,10 +39,12 @@ public class Block {
         this.auction = auction;
         this.previousHash = previousHash;
         this.hash = calculateHash();
+        this.signature = "";
+        this.nonce = 0;
     }
 
     public String calculateHash() {
-        String data = index + timestamp + auction.toString() + previousHash;
+        String data = index + timestamp + auction.toString() + previousHash + nonce;
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hashBytes = digest.digest(data.getBytes());
@@ -50,6 +56,15 @@ public class Block {
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }
+    }
+
+    public void mineBlock(int difficulty) {
+        String target = "0".repeat(difficulty); // E.g., "0000"
+        while (!hash.startsWith(target)) {
+            nonce++;
+            hash = calculateHash();
+        }
+        System.out.println("Block mined: " + hash);
     }
 
     public int getIndex() {
@@ -91,5 +106,24 @@ public class Block {
 
     public void setAuction(Auction auction) {
         this.auction = auction;
+    }
+
+    @Override
+    public String toString() {
+        return "Block{" +
+                "index=" + index +
+                ", timestamp=" + timestamp +
+                ", auction=" + auction +
+                ", previousHash='" + previousHash + '\'' +
+                ", hash='" + hash + '\'' +
+                '}';
+    }
+
+    public String getSignature() {
+        return signature;
+    }
+
+    public void setSignature(String signature) {
+        this.signature = signature;
     }
 }

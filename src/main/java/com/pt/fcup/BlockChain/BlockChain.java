@@ -31,34 +31,43 @@ public class BlockChain {
         chain.add(newBlock);
     }
 
+    public void addBlockToBlockChain(Block block) {
+        chain.add(block);
+    }
+
     public List<Block> getChain() {
         return chain;
     }
 
-    public boolean validateAndAdd(Block block) {
+    public String validateAndAdd(Block block) {
+        int difficulty = 4; // Number of leading zeros required
+        block.mineBlock(difficulty); // Only accept blocks that solve the challenge
+
         Block latest = getLatestBlock();
 
         // Basic validations
         if (block.getIndex() != latest.getIndex() + 1) {
-            System.out.println("Invalid index");
-            return false;
+            return ("Invalid index");
         }
 
         if (!block.getPreviousHash().equals(latest.getHash())) {
-            System.out.println("Previous hash mismatch");
-            return false;
+            return("Previous hash mismatch");
         }
 
         String recalculatedHash = block.calculateHash();
         if (!block.getHash().equals(recalculatedHash)) {
-            System.out.println("Invalid hash");
-            return false;
+            return("Invalid hash");
         }
 
-        // Optionally validate the bid inside the block if needed
+        // 4. Check proof-of-work: hash must start with required number of zeros
+        String targetPrefix = "0".repeat(difficulty);
+        if (!block.getHash().startsWith(targetPrefix)) {
+            return "Block does not satisfy proof-of-work";
+        }
+
 
         chain.add(block);
-        return true;
+        return "";
     }
 
     public void setChain(List<Block> chain) {
