@@ -1,4 +1,5 @@
-Inicialmente é gerado um par de chave privado e chave publica que vai ser utilizado para enviar transaçoes para a blockchain
+Inicialmente é gerado um par de chave privado e chave publica que vai ser utilizado para enviar transaçoes para a blockchain,
+e ele se cadastra a um canal de notificação para poder receber notificações em tempo real quando se adiciona um novo lance, um novo leilao e quando um leilao termina
 
 Depois é criado um no que é gerado apartir do par ip e porta que é escolhido aleatoriamente e é adcionado a chave publica e depois
 envia o no para o no bootstrap para poder se ligar a rede kademlia, o no bootstrap ao receber o no adciona ao bucket que tiver xor mais perto do novo no

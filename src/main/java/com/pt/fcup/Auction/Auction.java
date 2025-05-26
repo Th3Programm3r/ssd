@@ -14,8 +14,9 @@ public class Auction {
     private String senderHash;
     private Instant creationTimeStamp;
     private List<String> participants;
+    private boolean active;
 
-    public Auction(int id, List<Bid> bids, List<Product> products, int hoursToCloseAuction, String senderHash, Instant creationTimeStamp, List<String> participants) {
+    public Auction(int id, List<Bid> bids, List<Product> products, int hoursToCloseAuction, String senderHash, Instant creationTimeStamp, List<String> participants, boolean active) {
         this.id = id;
         this.bids = bids;
         this.products = products;
@@ -23,6 +24,7 @@ public class Auction {
         this.senderHash = senderHash;
         this.creationTimeStamp = creationTimeStamp;
         this.participants = participants;
+        this.active = active;
     }
 
     public Auction(int id, List<Bid> bids, List<Product> products) {
@@ -33,6 +35,7 @@ public class Auction {
         this.senderHash="";
         this.creationTimeStamp=null;
         this.participants = new ArrayList<>();
+        this.active = true;
     }
 
     public Auction() {
@@ -43,6 +46,7 @@ public class Auction {
         this.senderHash="";
         this.creationTimeStamp=null;
         this.participants = new ArrayList<>();
+        this.active = true;
     }
 
     public Auction(List<Product> products, Instant creationTimeStamp, int hoursToCloseAuction,String senderHash) {
@@ -53,6 +57,7 @@ public class Auction {
         this.id=(int) (creationTimeStamp.getEpochSecond());
         this.participants=new ArrayList<>();
         this.bids=new ArrayList<>();
+        this.active=true;
     }
 
     public int getId() {
@@ -132,4 +137,11 @@ public class Auction {
         return sb.toString();
     }
 
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
 }

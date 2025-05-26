@@ -22,6 +22,8 @@ service KademliaService {
   rpc FindNodeByHash(HashGrpc) returns (NodeGrpc);
   rpc AddAuction(BlockGrpc) returns (AuctionResponse);
   rpc AddBid(BlockGrpc) returns (SendBidResponse);
+  rpc ListenForBidNotifications(SubscribeRequest) returns (stream BidNotification);
+  rpc EndAuction(BlockGrpc) returns (SendBidResponse);
 }
 
 message NodeGrpc {
@@ -66,6 +68,7 @@ message AuctionGrpc {
   string senderHash = 5;
   google.protobuf.Timestamp creationTimeStamp = 6;
   repeated string participants= 7;
+  bool active = 8;
 }
 
 message BidGrpc {
@@ -135,5 +138,14 @@ message BlockChainGrpc{
 
 message HashGrpc {
   string hash=1;
+}
+
+
+message SubscribeRequest {
+  string nodeId = 1;
+}
+
+message BidNotification {
+  string message = 1;
 }
 

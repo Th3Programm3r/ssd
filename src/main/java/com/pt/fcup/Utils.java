@@ -35,6 +35,7 @@ public class Utils {
     public static final int difficulty = 4;
     public static final String bootstrapIp = "127.0.0.1";
     public static final int bootstrapPort = 50051;
+
     public static Auction convertAuctionFromProto(AuctionGrpc proto) {
         List<Bid> bids = proto.getBidsList().stream()
                 .map(b -> new Bid(b.getId(), b.getProductId(), b.getBidValue(),b.getSender(),b.getAuctionId()))
@@ -52,7 +53,7 @@ public class Utils {
         ;
 
 
-        return new Auction(proto.getId(), bids, products, proto.getHoursToCloseAuction(), proto.getSenderHash(),creationTimeStamp,proto.getParticipantsList());
+        return new Auction(proto.getId(), bids, products, proto.getHoursToCloseAuction(), proto.getSenderHash(),creationTimeStamp,proto.getParticipantsList(), proto.getActive());
     }
 
     public static AuctionGrpc convertAuctionToProto(Auction auction) {
@@ -64,8 +65,8 @@ public class Utils {
                 .setId(auction.getId())
                 .setSenderHash(auction.getSenderHash())
                 .setCreationTimeStamp(protoTimestamp)
-                .setHoursToCloseAuction(auction.getHoursToCloseAuction()
-        );
+                .setHoursToCloseAuction(auction.getHoursToCloseAuction())
+                .setActive(auction.isActive());
 
 
         for (Bid bid : auction.getBids()) {
