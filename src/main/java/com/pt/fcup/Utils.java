@@ -167,7 +167,10 @@ public class Utils {
     }
 
     public static BlockGrpc convertBlockToProto(Block block) {
-        AuctionGrpc auctionGrpc = convertAuctionToProto(block.getAuction());
+        AuctionGrpc auctionGrpc = AuctionGrpc.newBuilder().build();
+        if(block.getAuction()!=null)
+            auctionGrpc = convertAuctionToProto(block.getAuction());
+
         BlockGrpc response = BlockGrpc.newBuilder()
                 .setIndex(block.getIndex())
                 .setTimestamp(block.getTimestamp())

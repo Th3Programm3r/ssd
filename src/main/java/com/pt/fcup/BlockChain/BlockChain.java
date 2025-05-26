@@ -1,6 +1,7 @@
 package com.pt.fcup.BlockChain;
 
 import com.pt.fcup.Auction.Auction;
+import com.pt.fcup.Utils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,8 +41,7 @@ public class BlockChain {
     }
 
     public String validateAndAdd(Block block) {
-        int difficulty = 4; // Number of leading zeros required
-        block.mineBlock(difficulty); // Only accept blocks that solve the challenge
+        int difficulty = Utils.difficulty; // Number of leading zeros required
 
         Block latest = getLatestBlock();
 
@@ -52,11 +52,6 @@ public class BlockChain {
 
         if (!block.getPreviousHash().equals(latest.getHash())) {
             return("Previous hash mismatch");
-        }
-
-        String recalculatedHash = block.calculateHash();
-        if (!block.getHash().equals(recalculatedHash)) {
-            return("Invalid hash");
         }
 
         // 4. Check proof-of-work: hash must start with required number of zeros

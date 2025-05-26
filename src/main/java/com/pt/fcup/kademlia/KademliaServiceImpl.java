@@ -244,8 +244,9 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         try {
             Block block = Utils.convertBlockFromProto(blockGrpc);
             String blockSignature = block.getSignature();
-
-            String blockHash = block.getAuction().getSenderHash();
+            Auction auction = block.getAuction();
+            int lastIndex = auction.getBids().size()-1;
+            String blockHash = auction.getBids().get(lastIndex).getSender();
             String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
             PublicKey publicKey = null;
@@ -265,8 +266,12 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 }
             }
 
+            Block blockToVerify=block;
+            blockToVerify.setSignature("");
+            boolean verify=publicKey!=null?Utils.verifyBlock(blockToVerify, blockSignature, publicKey):false;
+
             // Only add to blockchain if verification is successful
-            if (publicKey != null && Utils.verifyBlock(block, blockSignature, publicKey)) {
+            if (verify) {
                 String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
                 if(result.equals("")){
                     // Broadcast to peers
@@ -297,7 +302,16 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                     responseObserver.onNext(response);
                     responseObserver.onCompleted();
                 }
+            } else {
+                SendBidResponse response = SendBidResponse.newBuilder()
+                        .setMessage("Invalid block signature or missing public key")
+                        .build();
+
+                responseObserver.onNext(response);
+                responseObserver.onCompleted();
             }
+
+
         } catch (Exception e) {
             // Proper gRPC error handling
             responseObserver.onError(

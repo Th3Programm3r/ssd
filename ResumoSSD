@@ -20,6 +20,9 @@ daquele no, mina aquele bloco com a nuonce definida e envia ao no boostrap, o no
 o challenge foi resolvido corretamente, se o hash anterior definido no novo bloco esta correto, e divulga aos restantes nos da rede, um no ao receber o bloco caso o hash anterior
 for differente do que ele tem na sua blockchain ele pede a blockchain para aquele leilao e atualiza internamente.
 
+Tem também a funcionalidade para mostrar a tabela de rotas interna e mostrar as blockchains internas que ele dispoe
+
+Um leilao ao terminar ele envia uma notificação para todos os nos participantes naquele leilao
 
 
 
@@ -27,9 +30,6 @@ for differente do que ele tem na sua blockchain ele pede a blockchain para aquel
 
 
 
-
--Ver se ao criar um leilao com um utilizador em que um outro for registado apos se ele busca este no no no bootstrap
--Ver se ao criar um leilao com uma assinatura falsa o que acontece
 
 
 
