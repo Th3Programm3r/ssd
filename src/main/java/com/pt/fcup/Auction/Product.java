@@ -75,4 +75,14 @@ public class Product {
     private int generateIdFromName(String name) {
         return name.toLowerCase().hashCode();
     }
+
+    @Override
+    public String toString() {
+        return "Product{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", initialPrice=" + initialPrice +
+                ", finalPrice=" + finalPrice +
+                '}';
+    }
 }

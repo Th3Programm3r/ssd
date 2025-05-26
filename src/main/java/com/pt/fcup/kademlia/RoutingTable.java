@@ -125,8 +125,9 @@ public class RoutingTable {
             if (!bucket.getNodes().isEmpty()) {
                 routingTableString+="Bucket " + i + ": ";
                 for (Node node : bucket.getNodes()) {
-                    routingTableString+="  - " + node.getId()+","+node.getIp()+","+node.getPort()+","+node.getPublicKey();
+                    routingTableString+="  - " + node.getId()+","+node.getIp()+","+node.getPort();
                 }
+                routingTableString+="\n";
             }
         }
         return routingTableString;

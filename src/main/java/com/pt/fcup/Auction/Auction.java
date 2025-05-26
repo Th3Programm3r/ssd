@@ -117,4 +117,19 @@ public class Auction {
         this.participants = participants;
     }
 
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Auction{");
+        sb.append("id=").append(id).append(",");
+        sb.append("senderHash=").append(senderHash).append(",");
+        sb.append("hoursToCloseAuction=").append(hoursToCloseAuction).append(",");
+        sb.append("creationTimeStamp=").append(creationTimeStamp).append(",");
+        sb.append("products=").append(products.toString()).append(",");
+        sb.append("bids=").append(bids.toString()).append(",");
+        sb.append("participants=").append(participants.toString());
+        sb.append("}");
+        return sb.toString();
+    }
+
 }

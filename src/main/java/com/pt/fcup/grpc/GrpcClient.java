@@ -62,6 +62,12 @@ public class GrpcClient {
         System.out.println("Add Node: " + response.getMessage());
     }
 
+    public void addNodeToRoutingTable(Node node) {
+        NodeGrpc protoNode = Utils.convertNodeToProto(node);
+        AddNodeResponse response = stub.addNodeToRoutingTable(protoNode);
+        System.out.println(response.getMessage());
+    }
+
     public NodeGrpc findClosest(String targetId) {
         FindRequest request = FindRequest.newBuilder().setTargetId(targetId).build();
         return stub.findClosestNode(request);
@@ -107,6 +113,12 @@ public class GrpcClient {
         System.out.println(response.getMessage());
     }
 
+    public void addBid(Block block){
+        BlockGrpc blockGrpc = Utils.convertBlockToProto(block);
+        SendBidResponse response = stub.addBid(blockGrpc);
+        System.out.println(response.getMessage());
+    }
+
 //    public String getBlock(Bid bid){
 //        BidGrpc bidGrpc = Utils.convertBidToProto(bid);
 //        SendBidResponse response = stub.sendBid(bidGrpc);
@@ -138,6 +150,18 @@ public class GrpcClient {
         return block;
     }
 
+    public void addAuction(Block block) {
+        try {
+            System.out.println("Lets go");
+            BlockGrpc convertedBlock = Utils.convertBlockToProto(block);
+            AuctionResponse response = stub.addAuction(convertedBlock);  // This may throw an exception
+            System.out.println("Response from server: " + response.getMessage());
+        } catch (Exception e) {
+            System.err.println("gRPC call failed: " + e.getMessage());
+            e.printStackTrace();  // This will give us the real root cause
+        }
+    }
+
     //Quando um no é iniciado ele pede da rede o estado atual da blockchain****
     //Adcionar o auction o objeto bid, retirar do objeto bid o auction porque ja nao vai ser preciso****
     //Adcionar um auction e adcionar a blochain e propagar pela rede a blockChain e nao a auction, remover lista de auctions da blockchain****
@@ -148,6 +172,9 @@ public class GrpcClient {
     //Ver se é preciso apagar um no quando não se consegue chegar a ele quando se adciona um novo no, um novo leilao e um novo lance
     //Ver como fazer para receber notificação cada vez que se envia um novo lance a um leilão a que o utilizador pertence ou quando o leilao termina
     //Quando o adcionar bid funcionar atualizar o codigo para o adcionar bid para os leiloes que participas
+    //Ver se tem como reduzir o tamanho da routing table
+    //Verificar o erro que acontece quando se liga a rede depois de ja ter sido criado algum leilao
+    //Testar o envio de lances
 
     public static void main(String[] args) throws Exception {
         // Generate RSA key pair
@@ -183,6 +210,8 @@ public class GrpcClient {
             System.out.println("1-Adcionar um produto");
             System.out.println("2-Criar um leilão");
             System.out.println("3-Visualizar leilões");
+            System.out.println("4-Visualizar o routing table");
+            System.out.println("5-Visualizar a blocking chain");
             int option = input.nextInt();
             if(option==1){
                 input.nextLine();
@@ -220,6 +249,10 @@ public class GrpcClient {
                     int choice=input.nextInt();
                     if(choice==0)
                         break;
+                    else if(choice>products.size() || choice<0){
+                        System.out.println("Opção não encontrada");
+                        break;
+                    }
                     System.out.println("Introduza o preço inicial do produto");
                     Float intialPrice = input.nextFloat();
                     Product product = products.get(choice-1);
@@ -230,9 +263,9 @@ public class GrpcClient {
                 Instant currentTimestamp = Instant.now();
                 Auction auction = new Auction(auctionProducts,currentTimestamp,tempo,localNode.getId());
                 Block block = new Block(0,currentTimestamp.toEpochMilli(),auction,"0");
+                block.mineBlock(Utils.difficulty);
                 String signature = Utils.signBlock(block,privateKey);
                 block.setSignature(signature);
-                block.mineBlock(Utils.difficulty);
                 bootstrapClient.sendAuction(block);
             }
             else if(option==3){
@@ -255,6 +288,10 @@ public class GrpcClient {
                             int choice2 = input.nextInt();
                             if (choice2 == 0)
                                 break;
+                            else if(choice2>auctions.size() || choice2<0){
+                                System.out.println("Opção não encontrada");
+                                break;
+                            }
 
                             Auction selectedAuction = auctions.get(choice2-1);
                             List<Bid> auctionBids = selectedAuction.getBids();
@@ -349,14 +386,15 @@ public class GrpcClient {
                     }
                 }
             }
-            else if(option==0){
-                List<Product> productsSaved=Utils.loadProductFromJsonFile("Products.json");
-                for (Product product:productsSaved)
-                    System.out.println("Carrosell "+product.getId()+":"+product.getName());
-                break;
+            else if(option==4){
+                selfClient.printRoutingTable();
+            }
+            else if(option==5){
+
             }
             else{
                 System.out.println("Opção não encontrada");
+                break;
             }
         }
 

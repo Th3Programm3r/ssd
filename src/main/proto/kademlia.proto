@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 service KademliaService {
   rpc Ping(PingRequest) returns (PingResponse);
   rpc AddNode(NodeGrpc) returns (AddNodeResponse);
+  rpc AddNodeToRoutingTable(NodeGrpc) returns (AddNodeResponse);
   rpc RemoveNode(NodeGrpc) returns (RemoveNodeResponse);
   rpc FindClosestNode(FindRequest) returns (NodeGrpc);
   rpc GetRoutingTable(Empty) returns (RoutingTableResponse);
@@ -15,11 +16,12 @@ service KademliaService {
   rpc PrintRoutingTable(Empty) returns (PrintRoutingTableResponse);
   rpc GetAuctions(Empty) returns (GetAuctionsResponse);
   rpc SendBid(BlockGrpc) returns (SendBidResponse);
-  rpc BroadcastBlock(BlockGrpc) returns (BlockAck);
   rpc GetLastBlockFromAuction(AuctionGrpc) returns (BlockGrpc);
   rpc AddBlockChains(BlockChainMap) returns (AddBlockChainsResponse);
   rpc GetBlockChains(Empty) returns (BlockChainMap);
   rpc FindNodeByHash(HashGrpc) returns (NodeGrpc);
+  rpc AddAuction(BlockGrpc) returns (AuctionResponse);
+  rpc AddBid(BlockGrpc) returns (SendBidResponse);
 }
 
 message NodeGrpc {

@@ -44,7 +44,8 @@ public class Block {
     }
 
     public String calculateHash() {
-        String data = index + timestamp + auction.toString() + previousHash + nonce;
+        String auctionString = (auction != null) ? auction.toString() : "null";
+        String data = index + timestamp + auctionString + previousHash + nonce;
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hashBytes = digest.digest(data.getBytes());
@@ -108,12 +109,11 @@ public class Block {
         this.auction = auction;
     }
 
-    @Override
-    public String toString() {
+    public String toCanonicalString() {
         return "Block{" +
                 "index=" + index +
                 ", timestamp=" + timestamp +
-                ", auction=" + auction +
+                ", auction=" + auction.toString() + // use the full string
                 ", previousHash='" + previousHash + '\'' +
                 ", hash='" + hash + '\'' +
                 '}';

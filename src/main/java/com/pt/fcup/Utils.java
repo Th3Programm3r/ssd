@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
@@ -173,6 +174,7 @@ public class Utils {
                 .setAuction(auctionGrpc)
                 .setPreviousHash(block.getPreviousHash())
                 .setHash(block.getHash())
+                .setSignature(block.getSignature())
                 .build();
 
         return response;
@@ -213,7 +215,8 @@ public class Utils {
         BlockChainGrpc.Builder builder = BlockChainGrpc.newBuilder();
 
         for(Block block: blockchain.getChain()){
-            builder.addChain(convertBlockToProto(block));
+            BlockGrpc blockGrpc = convertBlockToProto(block);
+            builder.addChain(blockGrpc);
         }
 
         return builder.build();
@@ -254,19 +257,19 @@ public class Utils {
     }
 
     public static String signBlock(Block block, PrivateKey privateKey) throws Exception {
-        String data = block.toString(); // consistent serialization
+        String data = block.toCanonicalString(); // instead of .toString()
         Signature signature = Signature.getInstance("SHA256withRSA");
         signature.initSign(privateKey);
-        signature.update(data.getBytes());
+        signature.update(data.getBytes(StandardCharsets.UTF_8));
         byte[] signedBytes = signature.sign();
         return Base64.getEncoder().encodeToString(signedBytes);
     }
 
     public static boolean verifyBlock(Block block, String signatureBase64, PublicKey publicKey) throws Exception {
-        String data = block.toString(); // same string format
+        String data = block.toCanonicalString(); // match exactly what was signed
         Signature signature = Signature.getInstance("SHA256withRSA");
         signature.initVerify(publicKey);
-        signature.update(data.getBytes());
+        signature.update(data.getBytes(StandardCharsets.UTF_8));
         byte[] signatureBytes = Base64.getDecoder().decode(signatureBase64);
         return signature.verify(signatureBytes);
     }

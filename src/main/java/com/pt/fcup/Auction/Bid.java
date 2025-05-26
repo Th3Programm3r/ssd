@@ -64,5 +64,16 @@ public class Bid {
     public void setAuctionId(int auctionId) {
         this.auctionId = auctionId;
     }
+
+    @Override
+    public String toString() {
+        return "Bid{" +
+                "id=" + id +
+                ", productId=" + productId +
+                ", auctionId=" + auctionId +
+                ", bidValue=" + bidValue +
+                ", sender='" + sender + '\'' +
+                '}';
+    }
 }
 
