@@ -77,6 +77,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                         System.out.println("Forwarded new node to: " + peer);
                     } catch (Exception e) {
                         System.err.println("Failed to notify " + peer + ": " + e.getMessage());
+                        routingTable.removeNode(peer);
                     }
                 }
             }
@@ -188,6 +189,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                         System.out.println("Forwarded new auction to node: " + peer);
                     } catch (Exception e) {
                         System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                        routingTable.removeNode(peer);
                     }
                 }
             }
@@ -301,6 +303,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
                             } catch (Exception e) {
                                 System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                                routingTable.removeNode(peer);
                             }
                         }
                     }
@@ -538,7 +541,6 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                     && !block.getAuction().getBids().stream().anyMatch(bid -> bid.getSender().equals(client.nodeId))
                 )
                     continue;
-
             }
             try {
                 client.observer.onNext(notification);

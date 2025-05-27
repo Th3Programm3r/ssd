@@ -289,8 +289,8 @@ public class GrpcClient {
                     i++;
                 }
 
-                System.out.println("Selecione o produto a adcionar no leilao ou 0 para terminar");
                 while(true){
+                    System.out.println("Selecione o produto a adcionar no leilao ou 0 para terminar");
                     System.out.println("Produto:");
                     int choice=input.nextInt();
                     if(choice==0)
@@ -334,7 +334,7 @@ public class GrpcClient {
                             int choice2 = input.nextInt();
                             if (choice2 == 0)
                                 break;
-                            else if(auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
+                            else if(!auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
                                 System.out.println("Opção não encontrada");
                                 break;
                             }
@@ -405,7 +405,7 @@ public class GrpcClient {
                             int choice2 = input.nextInt();
                             if (choice2 == 0)
                                 break;
-                            else if(auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
+                            else if(!auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
                                 System.out.println("Opção não encontrada");
                                 break;
                             }
@@ -490,7 +490,7 @@ public class GrpcClient {
                         int choice2 = input.nextInt();
                         if (choice2 == 0)
                             break;
-                        else if(auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
+                        else if(!auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
                             System.out.println("Opção não encontrada");
                             break;
                         }
