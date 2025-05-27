@@ -322,9 +322,8 @@ public class GrpcClient {
                 int choice=input.nextInt();
                 if(choice==1){
                     List<Auction> auctions=selfClient.getAuctions();
-                    int auctionID=1;
                     for(Auction auction:auctions){
-                        System.out.println("Leilão "+auctionID+", criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
+                        System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
                         for(Product product:auction.getProducts()){
                             System.out.println("Produto:" +product.getName());
                         }
@@ -335,12 +334,12 @@ public class GrpcClient {
                             int choice2 = input.nextInt();
                             if (choice2 == 0)
                                 break;
-                            else if(choice2>auctions.size() || choice2<0){
+                            else if(auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
                                 System.out.println("Opção não encontrada");
                                 break;
                             }
 
-                            Auction selectedAuction = auctions.get(choice2-1);
+                            Auction selectedAuction = auctions.stream().filter(auction -> auction.getId()==choice2).findFirst().get();
                             if(!selectedAuction.isActive()){
                                 System.out.println("Leilão selecionado encontra-se inativo");
                                 break;
@@ -393,9 +392,9 @@ public class GrpcClient {
                             allAuctions.stream().filter(auction -> auction.getSenderHash().equals(localNode.getId()) ||
                                     auction.getBids().stream().anyMatch(bid -> localNode.getId().equals(bid.getSender()))
                             ).collect(Collectors.toList());
-                    int auctionID=1;
+
                     for(Auction auction:auctions){
-                        System.out.println("Leilão "+auctionID+", criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
+                        System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
                         for(Product product:auction.getProducts()){
                             System.out.println("Produto:" +product.getName());
                         }
@@ -406,12 +405,12 @@ public class GrpcClient {
                             int choice2 = input.nextInt();
                             if (choice2 == 0)
                                 break;
-                            else if(choice2>auctions.size() || choice2<0){
+                            else if(auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
                                 System.out.println("Opção não encontrada");
                                 break;
                             }
 
-                            Auction selectedAuction = auctions.get(choice2-1);
+                            Auction selectedAuction = auctions.stream().filter(auction -> auction.getId()==choice2).findFirst().get();
                             if(!selectedAuction.isActive()){
                                 System.out.println("Leilão selecionado encontra-se inativo");
                                 break;
@@ -481,9 +480,9 @@ public class GrpcClient {
             }
             else if(option == 6){
                 List<Auction> auctions=selfClient.getAuctions();
-                int auctionID=1;
+
                 for(Auction auction:auctions){
-                    System.out.println("Leilão "+auctionID+", criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
+                    System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
                 }
                 if(auctions.size()>0) {
                     System.out.println("Selecione o Leilao que pretende terminar ou 0 para sair");
@@ -491,12 +490,12 @@ public class GrpcClient {
                         int choice2 = input.nextInt();
                         if (choice2 == 0)
                             break;
-                        else if(choice2>auctions.size() || choice2<0){
+                        else if(auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
                             System.out.println("Opção não encontrada");
                             break;
                         }
 
-                        Auction selectedAuction = auctions.get(choice2-1);
+                        Auction selectedAuction = auctions.stream().filter(auction -> auction.getId()==choice2).findFirst().get();
                         if(!selectedAuction.isActive()){
                             System.out.println("Leilão selecionado encontra-se inativo");
                             break;

@@ -6,6 +6,7 @@ import com.pt.fcup.Auction.Bid;
 import com.pt.fcup.BlockChain.Block;
 import com.pt.fcup.BlockChain.BlockChain;
 import com.pt.fcup.Utils;
+import com.pt.fcup.grpc.ConnectedClient;
 import com.pt.fcup.grpc.GrpcClient;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -43,6 +44,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImplBase{
     private final RoutingTable routingTable;
     private final List<StreamObserver<BidNotification>> observers = new CopyOnWriteArrayList<>();
+    List<ConnectedClient> connectedClients = new CopyOnWriteArrayList<>();
 
     public KademliaServiceImpl(RoutingTable routingTable) {
         this.routingTable = routingTable;
@@ -334,7 +336,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process broadcastAuction: " + e.getMessage())
+                            .withDescription("Failed to process sendBid: " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );
@@ -492,20 +494,20 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void listenForBidNotifications(SubscribeRequest request, StreamObserver<BidNotification> responseObserver) {
-        observers.add(responseObserver);
+        connectedClients.add(new ConnectedClient(request.getNodeId(), responseObserver));
 
-        // Optional: Send welcome message
-        BidNotification welcome = BidNotification.newBuilder()
-                .setMessage("👋 Subscribed to bid notifications")
-                .build();
-        responseObserver.onNext(welcome);
+        // Optional welcome
+        responseObserver.onNext(BidNotification.newBuilder()
+                .setMessage("👋 Subscribed for bid and auction updates.")
+                .build());
     }
+
 
     // Notify all listeners when a new bid is received
     public void notifyAllClients(Block block,int type) {
         Auction auction = block.getAuction();
         List<Bid> bids = auction.getBids();
-        Bid lastBid = bids.get(bids.size()-1);
+        Bid lastBid = bids.size()>0?bids.get(bids.size()-1):null;
         String message = "";
         //1 se for um leilao a ser criado
         //2 se for um novo lance
@@ -524,12 +526,24 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
 
 
-        for (StreamObserver<BidNotification> observer : observers) {
+        for (ConnectedClient client : connectedClients) {
+            if (type==1) {
+                if (client.nodeId.equals(block.getAuction().getSenderHash()))
+                    continue;
+            }
+            else{
+                if (client.nodeId.equals(lastBid.getSender()))
+                    continue;
+                if(!client.nodeId.equals(block.getAuction().getSenderHash())
+                    && !block.getAuction().getBids().stream().anyMatch(bid -> bid.getSender().equals(client.nodeId))
+                )
+                    continue;
+
+            }
             try {
-                observer.onNext(notification);
+                client.observer.onNext(notification);
             } catch (Exception e) {
-                // Client probably disconnected
-                observers.remove(observer);
+                connectedClients.remove(client);
             }
         }
     }
@@ -617,7 +631,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process broadcastAuction: " + e.getMessage())
+                            .withDescription("Failed to process endAuction: " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );
