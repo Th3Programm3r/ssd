@@ -118,7 +118,7 @@ public class RoutingTable {
     }
 
     public String printRoutingTableToString() {
-        String routingTableString="Routing Table for Node: " + localNode.getId()+"\n";
+        String routingTableString="Nó bootstrap: " + localNode.getId()+"\n";
 
         for (int i = 0; i < ID_BITS; i++) {
             KBucket bucket = buckets.get(i);

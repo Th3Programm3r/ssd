@@ -1,0 +1,34 @@
+Ao inciar o projeto é preciso incialmente iniciar o ficheiro GrpcServer.java que vai ser o ficheiro correspondente ao servidor bootstrap.
+Após isso pode-se iniciar os clientes no ficheiro GrpcClient.java, podendo iniciar a quantidades de clientes que quiseres, cada vez que um cliente é iniciado.
+o client apanha um ip e uma porta que esteja disponivel. Tanto o GrpcServer como o GrpcClient podem ser iniciados normalmente no IDE sendo que cada um deles possui um main
+ou também podem ser inciados no terminal com o comando java GrpcClient.java para compilar e depois javac GrpcClient.java.
+
+Ao iniciar aparecem uma lista de opções das funcionalidade que a aplicação do leilão vai ter e indica para premir o valor associado a funcionalidade na lista:
+-Se premir 1, ele adciona um produto novo pendido ao utilizador para indicar o nome do produto e depois de digitar o nome ele adciona o produto a um json que dispõe a lista de
+produtos, para não ser necessário toda vez que se inicia a aplicação ter de adcionar manualmente o produto.
+
+-Se premir o 2, ele cria um novo leilão, pedindo ao utilizador para indicar a duração em minutos que o utilizador quer que o leilao demore, porque tem um script que corre a cada
+X minutos, indicado no ficheiro de configuração, para ver se o leilão já acabou ou não e caso o tempo do leilão já tiver acabado, ele termina cria um bloco indicando o fim do
+leilão e envia a todos os nós da rede.
+Após indicar o tempo ele pede para escolher na lista de produtos, quais os produtos a adcionar e o valor inicial do leilão ou 0 para terminar de adcionar produtos. Após terminado
+a adição de produtos ele cria um bloco novo, resolve o challenge definido no ficheiro de configuração, assina com a sua chave privada e envia este novo bloco do leilao a todos os
+nos da rede para ser adcionado nas suas blockchains.
+
+-Se premir o 3, ele pede para escolher a opção de listar apenas os leilões em que ele participa ou listar todos os leilões que ele apanaha apartir da sua blockchain interna,
+após escolher aparece uma lista de leilões e pede para escolher qual o leilão, indicado com o id e os produtos que ele tem leiloado para ser feito lances, quando escolher o
+id do leilão se este estiver ainda ativo, deixa o utilizador dar lance para todos os produtos que encontrem no leilão ou 0 caso ele não quiser dar um lance para o produto indicado
+no momento, sendo que o lance para cada produto, tem de ser superior ao valor indicado atual. Ao criar os lances ele cria um bloco para cada um e apanha o ultimo bloco que se
+encontra na sua blockchain para o leilão indicado e adciona o novo lance e apanha o hash que gerou o ultimo bloco e adciona ao novo bloco, resolve o challenge, assina o bloco
+com a sua chave privada e envia o novo bloco para todos os nos da rede para ser adcionado as suas blockchains caso ele passe nas verificações.
+
+-Se premir o 4, ele lista a tabela de rotas interna daquele no
+
+-Se premir o 5, ele lista a blockchain interna daquele no
+
+-Se premir o 6, ele permite terminar o leilão, selecionando o leilao que pretende terminar, ele gera um novo bloco da mesma forma que no 3 e envia esta informação para os restantes
+nós
+
+A operação de adição de um leilão desencadea uma notificação para todos os nós da rede da criação do leilão e as operações de criação de lances e termino de leilão, desencadea
+notificação apenas nos nós que participam naquele leilão.
+Em cada uma dessas operações e adição de um novo nó na rede, se o contato com um determinado nó falhar ele elimina esse nó da tabela de rotas do nó bootstrap e dos restantes nos da rede.
+

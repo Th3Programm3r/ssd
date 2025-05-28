@@ -65,33 +65,54 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void addNode(NodeGrpc request, StreamObserver<AddNodeResponse> responseObserver) {
-        Node newNode = Utils.convertNodeFromProto(request);
-        routingTable.addNode(newNode);
+        try {
+            Node newNode = Utils.convertNodeFromProto(request);
+            routingTable.addNode(newNode);
 
-        for(KBucket kBucket: routingTable.getBuckets()) {
-            if (kBucket.getNodes().isEmpty()) {
-                continue; // Skip empty buckets
-            }
-            for (Node peer : kBucket.getNodes()) {
-                if (!peer.getId().equals(newNode.getId())) {
-                    try {
+            for (KBucket kBucket : routingTable.getBuckets()) {
+                if (kBucket.getNodes().isEmpty()) {
+                    continue; // Skip empty buckets
+                }
+                for (Node peer : kBucket.getNodes()) {
+                    if (!peer.getId().equals(newNode.getId())) {
                         GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                        client.addNodeToRoutingTable(newNode);
-                        System.out.println("Forwarded new node to: " + peer);
-                    } catch (Exception e) {
-                        System.err.println("Failed to notify " + peer + ": " + e.getMessage()+", no "+peer.getId());
-                        GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-                        bootstrapClient.broadcastRemoveNode(peer);
+                        try {
+                            try {
+                                client.addNodeToRoutingTable(newNode);
+                                System.out.println("Novo nó enviado para o nó: " + peer.getId());
+                            }
+                            finally {
+                                client.shutdown();
+                            }
+                        } catch (Exception e) {
+                            client.shutdown();
+                            System.err.println("Erro ao notificar o nó " + peer.getId() + ": " + e.getMessage());
+                            GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                            try {
+                                bootstrapClient.broadcastRemoveNode(peer);
+                            }
+                            finally {
+                                bootstrapClient.shutdown();
+                            }
+                        }
                     }
                 }
             }
-        }
 
-        AddNodeResponse response = AddNodeResponse.newBuilder()
-                .setMessage("Node added: " + newNode.getId()+" and propagated")
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+            AddNodeResponse response = AddNodeResponse.newBuilder()
+                    .setMessage("Nó adcionado: " + newNode.getId() + " e propagado")
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }catch (Exception e) {
+            // Proper gRPC error handling
+            responseObserver.onError(
+                    Status.INTERNAL
+                            .withDescription("Erro ao processar o envio do novo no: " + e.getMessage())
+                            .withCause(e)
+                            .asRuntimeException()
+            );
+        }
     }
 
     @Override
@@ -101,7 +122,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
 
         AddNodeResponse response = AddNodeResponse.newBuilder()
-                .setMessage("Node added: " + newNode.getId()+" to routing table")
+                .setMessage("Nó: " + newNode.getId()+" adcionado na tabela de rotas")
                 .build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
@@ -112,7 +133,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         Node node = Utils.convertNodeFromProto(request);
         routingTable.removeNode(node);
         RemoveNodeResponse response = RemoveNodeResponse.newBuilder()
-                .setMessage("Node removed: " + node.getId())
+                .setMessage("Nó removido: " + node.getId())
                 .build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
@@ -183,7 +204,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 blockChain.addBlockToBlockChain(block);
                 routingTable.addToBlockChains(block.getAuction().getId(),blockChain);
             } else {
-                System.err.println("Invalid block signature or missing public key");
+                System.err.println("Assinatura do bloco invalido ou chave publica inexistente");
             }
 
             // Broadcast to peers
@@ -192,17 +213,18 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                     continue; // Skip empty buckets
                 }
                 for (Node peer : kBucket.getNodes()) {
+                    GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                     try {
-                        GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                         try {
                             client.addAuction(block);
-                            System.out.println("Forwarded new auction to node: " + peer);
+                            System.out.println("Novo leilão enviado para o nó: " + peer.getId());
                         }
                         finally {
                             client.shutdown();
                         }
                     } catch (Exception e) {
-                        System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                        client.shutdown();
+                        System.err.println("Envio para o nó " + peer.getId() + " falhou: " + e.getMessage());
                         GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
                         try {
                             bootstrapClient.broadcastRemoveNode(peer);
@@ -214,11 +236,14 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 }
             }
 
+
+
+
             notifyAllClients(block,1);
 
             // Send success response
             AuctionResponse response = AuctionResponse.newBuilder()
-                    .setMessage("Broadcasted Auction to all nodes")
+                    .setMessage("Leilão adcionado em todos os nós")
                     .build();
 
             responseObserver.onNext(response);
@@ -228,7 +253,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process broadcastAuction: " + e.getMessage())
+                            .withDescription("Erro ao processar o envio de leilões: " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );
@@ -319,18 +344,19 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                             continue; // Skip empty buckets
                         }
                         for (Node peer : kBucket.getNodes()) {
+                            GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                             try {
-                                GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                                 try {
                                     client.addBid(block);
-                                    System.out.println("Forwarded new bid to node: " + peer);
+                                    System.out.println("Novo lance enviado para o nó: " + peer.getId());
                                 }
                                 finally {
                                     client.shutdown();
                                 }
 
                             } catch (Exception e) {
-                                System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                                client.shutdown();
+                                System.err.println("Erro ao enviar o lance para o nó " + peer.getId() + " " + e.getMessage());
                                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
                                 try {
                                     bootstrapClient.broadcastRemoveNode(peer);
@@ -346,7 +372,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                     notifyAllClients(block,2);
 
                     SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage("Broadcasted Bid to all nodes")
+                            .setMessage("Lance enviado para todos os nós")
                             .build();
 
                     responseObserver.onNext(response);
@@ -362,7 +388,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 }
             } else {
                 SendBidResponse response = SendBidResponse.newBuilder()
-                        .setMessage("Invalid block signature or missing public key")
+                        .setMessage("Assinatura invalida no bloco ou chave publica inexistente")
                         .build();
 
                 responseObserver.onNext(response);
@@ -374,7 +400,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process sendBid: " + e.getMessage())
+                            .withDescription("Erro ao processar envios de lances: " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );
@@ -416,13 +442,13 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
             if(result.equals("")){
                 SendBidResponse response = SendBidResponse.newBuilder()
-                        .setMessage("Bid added from block "+block.getHash()+", sended by "+block.getAuction().getSenderHash())
+                        .setMessage("Lance adcionado do bloco "+block.getHash()+", enviado por "+block.getAuction().getSenderHash())
                         .build();
 
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
             }
-            else if(result.equals("Previous hash mismatch")){
+            else if(result.equals("Hash anterior errado")){
                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
                 Block lastBlock = bootstrapClient.getLastBlockFromAuction(block.getAuction());
                 if(lastBlock!=null && lastBlock.getHash().equals(block.getPreviousHash())){
@@ -431,7 +457,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
 
                     SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage("Broadcasted Bid to all nodes")
+                            .setMessage("Lance enviado para todos os nós")
                             .build();
 
                     responseObserver.onNext(response);
@@ -459,7 +485,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process sendBid: " + e.getMessage())
+                            .withDescription("Erro ao processar o envio do lance: " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );
@@ -495,7 +521,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         Map<Integer, BlockChain> blockchains = Utils.convertBlockChainMapFromProto(protoMap);
         routingTable.setBlockchains(blockchains);
 
-        responseObserver.onNext(AddBlockChainsResponse.newBuilder().setSuccess(true).setMessage("BlockChain interno buscado do no bootstrap atualizado com sucesso").build());
+        responseObserver.onNext(AddBlockChainsResponse.newBuilder().setSuccess(true).setMessage("BlockChain interno buscado do no bootstrap e atualizado com sucesso").build());
         responseObserver.onCompleted();
     }
 
@@ -541,7 +567,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
             // Send success response
             AuctionResponse response = AuctionResponse.newBuilder()
-                    .setMessage("Added Auction from block "+block.getHash()+" created by"+block.getAuction().getSenderHash())
+                    .setMessage("Leilão adcionado do bloco "+block.getHash()+" criado pelo nó "+block.getAuction().getSenderHash())
                     .build();
 
             responseObserver.onNext(response);
@@ -551,7 +577,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process sendBid: " + e.getMessage())
+                            .withDescription("Erro ao processar a adição do leilão do bloco "+blockGrpc.getHash()+" no nó "+routingTable.getLocalNode().getId()+": " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );
@@ -565,7 +591,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
         // Optional welcome
         responseObserver.onNext(BidNotification.newBuilder()
-                .setMessage("👋 Subscribed for bid and auction updates.")
+                .setMessage("👋 Subscrito no canal de notificação de atualização de lances e leilões.")
                 .build());
     }
 
@@ -672,14 +698,14 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                                 GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                                 try {
                                     client.addBid(block);
-                                    System.out.println("Forwarded end auction to node: " + peer);
+                                    System.out.println("Envio de fim de leilão enviado ao nó: " + peer.getId());
                                 }
                                 finally {
                                     client.shutdown();
                                 }
 
                             } catch (Exception e) {
-                                System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                                System.err.println("Envio de fim de leilão falhou para o nó " + peer.getId() + ": " + e.getMessage());
                                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
                                 try {
                                     bootstrapClient.broadcastRemoveNode(peer);
@@ -710,7 +736,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 }
             } else {
                 SendBidResponse response = SendBidResponse.newBuilder()
-                        .setMessage("Invalid block signature or missing public key")
+                        .setMessage("Assinatura do bloco invalido ou chave publica inexistente")
                         .build();
 
                 responseObserver.onNext(response);
@@ -722,7 +748,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process endAuction: " + e.getMessage())
+                            .withDescription("Erro ao processar o fim do leilão "+blockGrpc.getAuction().getId()+": " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );
@@ -745,7 +771,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                         GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                         try {
                             client.removeNode(node);
-                            System.out.println("No removido da tabela de rotas do no: " + peer.getId());
+                            System.out.println("Nó removido da tabela de rotas do nó: " + peer.getId());
                         }
                         finally {
                             client.shutdown();
@@ -753,7 +779,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
                     }
                 } catch (Exception e) {
-                    System.err.println("Remoção no no " + peer.getId() + " falhou: " + e.getMessage());
+                    System.err.println("Remoção no nó " + peer.getId() + " falhou: " + e.getMessage());
                 }
             }
         }
@@ -761,7 +787,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
         notifyAllClientsNodeRemoved(node);
 
         RemoveNodeResponse response = RemoveNodeResponse.newBuilder()
-                .setMessage("No "+node.getId()+" removido do bootstrap e dos restantes nos participantes da rede")
+                .setMessage("Nó "+node.getId()+" removido do bootstrap e dos restantes nós participantes da rede")
                 .build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
@@ -770,7 +796,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     public void notifyAllClientsNodeRemoved(Node node) {
 
 
-        String message = "📢 No " + node.getId()+ " removido do no bootstrap e de todos os nos participantes no kadelmia por falhar o ping";
+        String message = "📢 Nó " + node.getId()+ " removido do no bootstrap e de todos os nós participantes no kadelmia por falhar o ping";
 
 
         BidNotification notification = BidNotification.newBuilder()
@@ -809,14 +835,14 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                                 GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                                 try {
                                     client.addBid(block);
-                                    System.out.println("Forwarded end auction to node: " + peer);
+                                    System.out.println("Fim do leilão enviado para o nó: " + peer.getId());
                                 }
                                 finally {
                                     client.shutdown();
                                 }
 
                             } catch (Exception e) {
-                                System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                                System.err.println("Erro ao enviar o fim de leilão para o nó " + peer.getId() + ": " + e.getMessage());
                                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
                                 try {
                                     bootstrapClient.broadcastRemoveNode(peer);
@@ -829,7 +855,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                     }
 
                     SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage("Broadcasted Bid to all nodes")
+                            .setMessage("Fim do envio do fim de leilão para todos os nós")
                             .build();
 
                     responseObserver.onNext(response);
@@ -855,7 +881,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // Proper gRPC error handling
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription("Failed to process endAuction: " + e.getMessage())
+                            .withDescription("Erro ao processar o fim do leilão: " + e.getMessage())
                             .withCause(e)
                             .asRuntimeException()
             );

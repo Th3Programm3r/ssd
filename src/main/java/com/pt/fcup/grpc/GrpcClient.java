@@ -69,7 +69,7 @@ public class GrpcClient {
     public void sendNode(Node node) {
         NodeGrpc protoNode = Utils.convertNodeToProto(node);
         AddNodeResponse response = stub.addNode(protoNode);
-        System.out.println("Add Node: " + response.getMessage());
+        System.out.println("No adcionado: " + response.getMessage());
     }
 
     public void addNodeToRoutingTable(Node node) {
@@ -94,9 +94,9 @@ public class GrpcClient {
         System.out.println(response.getMessage());
     }
 
-    public void printRoutingTable() {
+    public void printRoutingTable(Node localNode) {
         PrintRoutingTableResponse response = stub.printRoutingTable(Empty.newBuilder().build());
-        System.out.println("TABLE: " + response.getMessage());
+        System.out.println("Tabela do nó "+localNode.getId()+","+localNode.getIp()+":"+localNode.getPort()+" :\n" + response.getMessage());
     }
 
     public List<Auction> getAuctions() {
@@ -172,14 +172,9 @@ public class GrpcClient {
     }
 
     public void addAuction(Block block) {
-        try {
-            BlockGrpc convertedBlock = Utils.convertBlockToProto(block);
-            AuctionResponse response = stub.addAuction(convertedBlock);  // This may throw an exception
-            System.out.println("Response from server: " + response.getMessage());
-        } catch (Exception e) {
-            System.err.println("gRPC call failed: " + e.getMessage());
-            e.printStackTrace();  // This will give us the real root cause
-        }
+        BlockGrpc convertedBlock = Utils.convertBlockToProto(block);
+        AuctionResponse response = stub.addAuction(convertedBlock);  // This may throw an exception
+        System.out.println("Response from server: " + response.getMessage());
     }
 
 
@@ -194,12 +189,12 @@ public class GrpcClient {
 
             @Override
             public void onError(Throwable t) {
-                System.err.println("Disconnected from notifications: " + t.getMessage());
+                System.err.println("Disconetou do canal de notificações: " + t.getMessage());
             }
 
             @Override
             public void onCompleted() {
-                System.out.println("Notification stream closed");
+                System.out.println("Stream de notificação fechado");
             }
         });
     }
@@ -209,8 +204,8 @@ public class GrpcClient {
             System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+",estado:"+(auction.isActive()?"ativo":"inativo"));
             for(Product product:auction.getProducts()){
                 System.out.println("Produto:" +product.getName());
-                System.out.println();
             }
+            System.out.println();
         }
     }
 
@@ -218,13 +213,13 @@ public class GrpcClient {
     public void broadcastRemoveNode(Node node) {
         NodeGrpc protoNode = Utils.convertNodeToProto(node);
         Kademlia.RemoveNodeResponse response = stub.broadcastRemoveNode(protoNode);
-        System.out.println("Removed Node: " + response.getMessage());
+        System.out.println("Nó removido do bootstrap e de todos os outros nós: " + response.getMessage());
     }
 
     public void removeNode(Node node) {
         NodeGrpc protoNode = Utils.convertNodeToProto(node);
         Kademlia.RemoveNodeResponse response = stub.removeNode(protoNode);
-        System.out.println("Removed Node: " + response.getMessage());
+        System.out.println("Nó removido: " + response.getMessage());
     }
 
 
@@ -241,7 +236,7 @@ public class GrpcClient {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        }, 0, 1, TimeUnit.MINUTES);
+        }, 0, Utils.minuteToRunScript, TimeUnit.MINUTES);
     }
 
     private static void checkInstants(Node localNode, GrpcClient bootstrapClient,GrpcClient selfClient) throws InterruptedException {
@@ -333,7 +328,7 @@ public class GrpcClient {
         // 2. Start gRPC server for this node
         GrpcServer server = new GrpcServer(localIp, localPort);
         server.start(); // async
-        System.out.printf("Node started: %s:%d (ID: %s)%n", localIp, localPort, localNode.getId());
+        System.out.printf("Nó iniciou: %s:%d (ID: %s)%n", localIp, localPort, localNode.getId());
 
         // 3. Bootstrap contact
         GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
@@ -356,9 +351,10 @@ public class GrpcClient {
                 System.out.println("1-Adcionar um produto");
                 System.out.println("2-Criar um leilão");
                 System.out.println("3-Visualizar leilões");
-                System.out.println("4-Visualizar o routing table");
+                System.out.println("4-Visualizar a tabela de rotas do nó");
                 System.out.println("5-Visualizar a blocking chain");
                 System.out.println("6-Terminar leilão");
+                System.out.println("7-Visualizar a tabela de rotas do nó bootstrap");
                 int option = input.nextInt();
                 System.out.println();
                 if (option == 1) {
@@ -476,7 +472,7 @@ public class GrpcClient {
                                         block.setSignature(signature);
 
                                         bootstrapClient.sendBid(block);
-                                    } else {
+                                    } else if(valor!=0f){
                                         System.out.println("Valor do lance tem de ser maior do que o lance atual");
                                     }
                                 }
@@ -491,13 +487,6 @@ public class GrpcClient {
                                         auction.getBids().stream().anyMatch(bid -> localNode.getId().equals(bid.getSender()))
                                 ).collect(Collectors.toList());
 
-                        /*for(Auction auction:auctions){
-                            System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
-                            for(Product product:auction.getProducts()){
-                                System.out.println("Produto:" +product.getName());
-                                System.out.println();
-                            }
-                        }*/
                         printAuctions(auctions);
 
                         if (auctions.size() > 0) {
@@ -551,9 +540,10 @@ public class GrpcClient {
 
                                         bootstrapClient.sendBid(block);
 
-                                    } else {
+                                    } else if(valor!=0f){
                                         System.out.println("Valor do lance tem de ser maior do que o lance atual");
                                     }
+                                    System.out.println();
                                 }
 
                                 break;
@@ -561,7 +551,7 @@ public class GrpcClient {
                         }
                     }
                 } else if (option == 4) {
-                    selfClient.printRoutingTable();
+                    selfClient.printRoutingTable(localNode);
                 } else if (option == 5) {
                     BlockChainMap currentBlockChainMap = bootstrapClient.getBlockChains();
                     Map<Integer, BlockChain> blockChains = Utils.convertBlockChainMapFromProto(currentBlockChainMap.getBlockChainMap());
@@ -570,7 +560,7 @@ public class GrpcClient {
                         for (Block block : entry.getValue().getChain()) {
                             if (block.getAuction() != null && block.getAuction().getId() != 0) {
                                 String generatedBy = block.getAuction().getBids().size() > 0 ? block.getAuction().getBids().get(block.getAuction().getBids().size() - 1).getSender() : block.getAuction().getSenderHash();
-                                System.out.println("Block: " + block.getHash() + ",generated by " + generatedBy);
+                                System.out.println("Bloco: " + block.getHash() + ",gerado pelo nó " + generatedBy);
                             } else
                                 System.out.println("Bloco Genesis : " + block.getHash());
                         }
@@ -578,14 +568,10 @@ public class GrpcClient {
                 } else if (option == 6) {
                     List<Auction> auctions = selfClient.getAuctions();
 
-                    /*for(Auction auction:auctions){
-                        System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
-
-                    }*/
                     printAuctions(auctions);
 
                     if (auctions.size() > 0) {
-                        System.out.println("Selecione o Leilao que pretende terminar ou 0 para sair");
+                        System.out.println("Selecione o Leilão que pretende terminar ou 0 para sair");
                         while (true) {
                             int choice2 = input.nextInt();
                             if (choice2 == 0)
@@ -625,7 +611,11 @@ public class GrpcClient {
                             break;
                         }
                     }
-                } else {
+                }
+                else if(option==7){
+                    bootstrapClient.printRoutingTable(bootstrapClient.getTargetNode());
+                }
+                else {
                     System.out.println("Opção não encontrada");
                     break;
                 }
