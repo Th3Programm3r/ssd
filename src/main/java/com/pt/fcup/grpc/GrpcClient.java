@@ -465,6 +465,8 @@ public class GrpcClient {
 
                                         Auction updatedAuction = lastBlock.getAuction();
                                         updatedAuction.addBid(newBid);
+                                        if(!updatedAuction.getParticipants().contains(localNode.getId()))
+                                            updatedAuction.addParticipant(localNode.getId());
 
                                         Block block = new Block(lastBlock.getIndex() + 1, currentTimestamp.toEpochMilli(), updatedAuction, lastBlock.getHash());
                                         block.mineBlock(Utils.difficulty);
@@ -482,9 +484,14 @@ public class GrpcClient {
                         }
                     } else if (choice == 2) {
                         List<Auction> allAuctions = selfClient.getAuctions();
+//                        List<Auction> auctions =
+//                                allAuctions.stream().filter(auction -> auction.getSenderHash().equals(localNode.getId()) ||
+//                                        auction.getBids().stream().anyMatch(bid -> localNode.getId().equals(bid.getSender()))
+//                                ).collect(Collectors.toList());
+
                         List<Auction> auctions =
                                 allAuctions.stream().filter(auction -> auction.getSenderHash().equals(localNode.getId()) ||
-                                        auction.getBids().stream().anyMatch(bid -> localNode.getId().equals(bid.getSender()))
+                                        auction.getParticipants().contains(localNode.getId())
                                 ).collect(Collectors.toList());
 
                         printAuctions(auctions);
@@ -532,6 +539,8 @@ public class GrpcClient {
 
                                         Auction updatedAuction = lastBlock.getAuction();
                                         updatedAuction.addBid(newBid);
+                                        if(!updatedAuction.getParticipants().contains(localNode.getId()))
+                                            updatedAuction.addParticipant(localNode.getId());
 
                                         Block block = new Block(lastBlock.getIndex() + 1, currentTimestamp.toEpochMilli(), updatedAuction, lastBlock.getHash());
                                         block.mineBlock(Utils.difficulty);
@@ -597,7 +606,8 @@ public class GrpcClient {
                             } else {
                                 updatedAuction.setSenderHash(localNode.getId());
                             }
-
+                            if(!updatedAuction.getParticipants().contains(localNode.getId()))
+                                updatedAuction.addParticipant(localNode.getId());
 
                             Instant currentTimestamp = Instant.now();
                             Block block = new Block(lastBlock.getIndex() + 1, currentTimestamp.toEpochMilli(), updatedAuction, lastBlock.getHash());

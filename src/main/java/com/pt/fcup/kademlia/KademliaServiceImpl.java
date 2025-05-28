@@ -628,7 +628,8 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 if (lastBid!=null && client.nodeId.equals(lastBid.getSender()))
                     continue;
                 if(!client.nodeId.equals(block.getAuction().getSenderHash())
-                        && !block.getAuction().getBids().stream().anyMatch(bid -> bid.getSender().equals(client.nodeId))
+                        && !block.getAuction().getParticipants().contains(client.nodeId)
+                       // && !block.getAuction().getBids().stream().anyMatch(bid -> bid.getSender().equals(client.nodeId))
                 )
                     continue;
             }

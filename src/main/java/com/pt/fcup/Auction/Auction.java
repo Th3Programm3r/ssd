@@ -2,6 +2,8 @@ package com.pt.fcup.Auction;
 
 
 
+import org.checkerframework.checker.units.qual.A;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +15,7 @@ public class Auction {
     private int hoursToCloseAuction;
     private String senderHash;
     private Instant creationTimeStamp;
-    private List<String> participants;
+    private List<String> participants=new ArrayList<>();
     private boolean active;
 
     public Auction(int id, List<Bid> bids, List<Product> products, int hoursToCloseAuction, String senderHash, Instant creationTimeStamp, List<String> participants, boolean active) {
@@ -143,5 +145,12 @@ public class Auction {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public void addParticipant(String id){
+        if (this.participants == null) {
+            this.participants = new ArrayList<>();
+        }
+        this.participants.add(id);
     }
 }

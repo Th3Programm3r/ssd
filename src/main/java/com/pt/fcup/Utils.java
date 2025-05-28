@@ -53,8 +53,9 @@ public class Utils {
                 )
         ;
 
+        List<String> participants = new ArrayList<>(proto.getParticipantsList());
 
-        return new Auction(proto.getId(), bids, products, proto.getHoursToCloseAuction(), proto.getSenderHash(),creationTimeStamp,proto.getParticipantsList(), proto.getActive());
+        return new Auction(proto.getId(), bids, products, proto.getHoursToCloseAuction(), proto.getSenderHash(),creationTimeStamp,participants, proto.getActive());
     }
 
     public static AuctionGrpc convertAuctionToProto(Auction auction) {
