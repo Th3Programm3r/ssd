@@ -62,7 +62,7 @@ public class KBucket {
     }
 
     public void removeNode(Node node) {
-        nodes.remove(node);
+        nodes.removeIf(_node -> _node.getId().equals(node.getId()));
     }
 
     public Node findNode(Node node){

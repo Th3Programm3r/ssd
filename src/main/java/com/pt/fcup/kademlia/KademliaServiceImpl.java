@@ -35,10 +35,13 @@ import kademlia.Kademlia.BidNotification;
 import kademlia.Kademlia.SubscribeRequest;
 
 import java.security.PublicKey;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 
 public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImplBase{
@@ -76,8 +79,9 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                         client.addNodeToRoutingTable(newNode);
                         System.out.println("Forwarded new node to: " + peer);
                     } catch (Exception e) {
-                        System.err.println("Failed to notify " + peer + ": " + e.getMessage());
-                        routingTable.removeNode(peer);
+                        System.err.println("Failed to notify " + peer + ": " + e.getMessage()+", no "+peer.getId());
+                        GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                        bootstrapClient.broadcastRemoveNode(peer);
                     }
                 }
             }
@@ -105,7 +109,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void removeNode(NodeGrpc request, StreamObserver<RemoveNodeResponse> responseObserver) {
-        Node node = new Node(request.getIp(), request.getPort());
+        Node node = Utils.convertNodeFromProto(request);
         routingTable.removeNode(node);
         RemoveNodeResponse response = RemoveNodeResponse.newBuilder()
                 .setMessage("Node removed: " + node.getId())
@@ -142,6 +146,7 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     public void broadcastAuction(BlockGrpc blockGrpc, StreamObserver<AuctionResponse> responseObserver) {
         try {
             Block block = Utils.convertBlockFromProto(blockGrpc);
+            System.out.println("Bloco recebido "+block.getHash());
             String blockSignature = block.getSignature();
 
             String blockHash = block.getAuction().getSenderHash();
@@ -155,12 +160,16 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // If public key is missing, request from bootstrap first
             if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-
-                Node node = bootstrapClient.findNodeByHash(blockHash);
-                if (node != null) {
-                    routingTable.addNode(node);
-                    publicKeyString = routingTable.getPublicKeyByHash(blockHash);
-                    publicKey = Utils.decodePublicKey(publicKeyString);
+                try{
+                    Node node = bootstrapClient.findNodeByHash(blockHash);
+                    if (node != null) {
+                        routingTable.addNode(node);
+                        publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                        publicKey = Utils.decodePublicKey(publicKeyString);
+                    }
+                }
+                finally {
+                    bootstrapClient.shutdown();
                 }
             }
 
@@ -185,11 +194,22 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 for (Node peer : kBucket.getNodes()) {
                     try {
                         GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                        client.addAuction(block);
-                        System.out.println("Forwarded new auction to node: " + peer);
+                        try {
+                            client.addAuction(block);
+                            System.out.println("Forwarded new auction to node: " + peer);
+                        }
+                        finally {
+                            client.shutdown();
+                        }
                     } catch (Exception e) {
                         System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
-                        routingTable.removeNode(peer);
+                        GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                        try {
+                            bootstrapClient.broadcastRemoveNode(peer);
+                        }
+                        finally {
+                            bootstrapClient.shutdown();
+                        }
                     }
                 }
             }
@@ -272,12 +292,16 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             // If public key is missing, request from bootstrap first
             if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-
-                Node node = bootstrapClient.findNodeByHash(blockHash);
-                if (node != null) {
-                    routingTable.addNode(node);
-                    publicKeyString = routingTable.getPublicKeyByHash(blockHash);
-                    publicKey = Utils.decodePublicKey(publicKeyString);
+                try {
+                    Node node = bootstrapClient.findNodeByHash(blockHash);
+                    if (node != null) {
+                        routingTable.addNode(node);
+                        publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                        publicKey = Utils.decodePublicKey(publicKeyString);
+                    }
+                }
+                finally {
+                    bootstrapClient.shutdown();
                 }
             }
 
@@ -297,13 +321,24 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                         for (Node peer : kBucket.getNodes()) {
                             try {
                                 GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                                client.addBid(block);
-                                System.out.println("Forwarded new bid to node: " + peer);
-
+                                try {
+                                    client.addBid(block);
+                                    System.out.println("Forwarded new bid to node: " + peer);
+                                }
+                                finally {
+                                    client.shutdown();
+                                }
 
                             } catch (Exception e) {
                                 System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
-                                routingTable.removeNode(peer);
+                                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                                try {
+                                    bootstrapClient.broadcastRemoveNode(peer);
+                                }
+                                finally {
+                                    bootstrapClient.shutdown();
+                                }
+
                             }
                         }
                     }
@@ -350,6 +385,8 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void addBid(BlockGrpc blockGrpc, StreamObserver<SendBidResponse> responseObserver) {
+        try {
+
 
             Block block = Utils.convertBlockFromProto(blockGrpc);
 
@@ -364,10 +401,14 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             !routingTable.getLocalNode().getId().equals(block.getAuction().getSenderHash()) && publicKeyString.isEmpty() )
         {
                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-
-                Node node = bootstrapClient.findNodeByHash(blockHash);
-                if (node != null) {
-                    routingTable.addNode(node);
+                try {
+                    Node node = bootstrapClient.findNodeByHash(blockHash);
+                    if (node != null) {
+                        routingTable.addNode(node);
+                    }
+                }
+                finally {
+                    bootstrapClient.shutdown();
                 }
             }
 
@@ -413,8 +454,16 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
             }
-
-
+        }
+         catch (Exception e) {
+            // Proper gRPC error handling
+            responseObserver.onError(
+                    Status.INTERNAL
+                            .withDescription("Failed to process sendBid: " + e.getMessage())
+                            .withCause(e)
+                            .asRuntimeException()
+            );
+        }
 
     }
 
@@ -462,36 +511,51 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void addAuction(BlockGrpc blockGrpc, StreamObserver<AuctionResponse> responseObserver) {
-        Block block = Utils.convertBlockFromProto(blockGrpc);
+        try {
+            Block block = Utils.convertBlockFromProto(blockGrpc);
 
-        String blockHash = block.getAuction().getSenderHash();
-        String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+            String blockHash = block.getAuction().getSenderHash();
+            String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
-        // If public key is missing, request from bootstrap first
-        if ( !routingTable.getLocalNode().getId().equals(block.getAuction().getSenderHash()) && publicKeyString == null ||
-                !routingTable.getLocalNode().getId().equals(block.getAuction().getSenderHash()) && publicKeyString.isEmpty() ) {
-            GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-
-            Node node = bootstrapClient.findNodeByHash(blockHash);
-            if (node != null) {
-                routingTable.addNode(node);
+            // If public key is missing, request from bootstrap first
+            if ( !routingTable.getLocalNode().getId().equals(block.getAuction().getSenderHash()) && publicKeyString == null ||
+                    !routingTable.getLocalNode().getId().equals(block.getAuction().getSenderHash()) && publicKeyString.isEmpty() ) {
+                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                try {
+                    Node node = bootstrapClient.findNodeByHash(blockHash);
+                    if (node != null) {
+                        routingTable.addNode(node);
+                    }
+                }
+                finally {
+                    bootstrapClient.shutdown();
+                }
             }
+
+
+            BlockChain blockChain = new BlockChain();
+            blockChain.addBlockToBlockChain(block);
+            routingTable.addToBlockChains(block.getAuction().getId(),blockChain);
+
+
+
+            // Send success response
+            AuctionResponse response = AuctionResponse.newBuilder()
+                    .setMessage("Added Auction from block "+block.getHash()+" created by"+block.getAuction().getSenderHash())
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
         }
-
-
-        BlockChain blockChain = new BlockChain();
-        blockChain.addBlockToBlockChain(block);
-        routingTable.addToBlockChains(block.getAuction().getId(),blockChain);
-
-
-
-        // Send success response
-        AuctionResponse response = AuctionResponse.newBuilder()
-                .setMessage("Added Auction from block "+block.getHash()+" created by"+block.getAuction().getSenderHash())
-                .build();
-
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+        catch (Exception e) {
+            // Proper gRPC error handling
+            responseObserver.onError(
+                    Status.INTERNAL
+                            .withDescription("Failed to process sendBid: " + e.getMessage())
+                            .withCause(e)
+                            .asRuntimeException()
+            );
+        }
 
     }
 
@@ -530,18 +594,20 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
 
         for (ConnectedClient client : connectedClients) {
-            if (type==1) {
+            if(lastBid==null){
                 if (client.nodeId.equals(block.getAuction().getSenderHash()))
                     continue;
             }
-            else{
-                if (client.nodeId.equals(lastBid.getSender()))
+            else {
+                if (lastBid!=null && client.nodeId.equals(lastBid.getSender()))
                     continue;
                 if(!client.nodeId.equals(block.getAuction().getSenderHash())
-                    && !block.getAuction().getBids().stream().anyMatch(bid -> bid.getSender().equals(client.nodeId))
+                        && !block.getAuction().getBids().stream().anyMatch(bid -> bid.getSender().equals(client.nodeId))
                 )
                     continue;
             }
+
+
             try {
                 client.observer.onNext(notification);
             } catch (Exception e) {
@@ -557,7 +623,13 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             String blockSignature = block.getSignature();
             Auction auction = block.getAuction();
             int lastIndex = auction.getBids().size()-1;
-            String blockHash = auction.getBids().get(lastIndex).getSender();
+            String blockHash = "";
+            if(auction.getBids().size()>0){
+                blockHash = auction.getBids().get(lastIndex).getSender();
+            }
+            else{
+                blockHash = auction.getSenderHash();
+            }
             String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
             PublicKey publicKey = null;
@@ -569,11 +641,16 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
             if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
 
-                Node node = bootstrapClient.findNodeByHash(blockHash);
-                if (node != null) {
-                    routingTable.addNode(node);
-                    publicKeyString = routingTable.getPublicKeyByHash(blockHash);
-                    publicKey = Utils.decodePublicKey(publicKeyString);
+                try {
+                    Node node = bootstrapClient.findNodeByHash(blockHash);
+                    if (node != null) {
+                        routingTable.addNode(node);
+                        publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                        publicKey = Utils.decodePublicKey(publicKeyString);
+                    }
+                }
+                finally {
+                    bootstrapClient.shutdown();
                 }
             }
 
@@ -593,17 +670,29 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                         for (Node peer : kBucket.getNodes()) {
                             try {
                                 GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                                client.addBid(block);
-                                System.out.println("Forwarded end auction to node: " + peer);
+                                try {
+                                    client.addBid(block);
+                                    System.out.println("Forwarded end auction to node: " + peer);
+                                }
+                                finally {
+                                    client.shutdown();
+                                }
 
                             } catch (Exception e) {
                                 System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                                try {
+                                    bootstrapClient.broadcastRemoveNode(peer);
+                                }
+                                finally {
+                                    bootstrapClient.shutdown();
+                                }
                             }
                         }
                     }
 
                     SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage("Broadcasted Bid to all nodes")
+                            .setMessage("Bloco "+block.getHash()+" enviado para todos os nos e leilao "+block.getAuction().getId()+" terminado")
                             .build();
 
                     responseObserver.onNext(response);
@@ -627,6 +716,139 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                 responseObserver.onNext(response);
                 responseObserver.onCompleted();
             }
+
+
+        } catch (Exception e) {
+            // Proper gRPC error handling
+            responseObserver.onError(
+                    Status.INTERNAL
+                            .withDescription("Failed to process endAuction: " + e.getMessage())
+                            .withCause(e)
+                            .asRuntimeException()
+            );
+        }
+
+    }
+
+
+    @Override
+    public void broadcastRemoveNode(NodeGrpc request, StreamObserver<RemoveNodeResponse> responseObserver) {
+        Node node = Utils.convertNodeFromProto(request);
+        routingTable.removeNode(node);
+        for (KBucket kBucket : routingTable.getBuckets()) {
+            if (kBucket.getNodes().isEmpty()) {
+                continue; // Skip empty buckets
+            }
+            for (Node peer : kBucket.getNodes()) {
+                try {
+                    if(!peer.getId().equals(node.getId())){
+                        GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                        try {
+                            client.removeNode(node);
+                            System.out.println("No removido da tabela de rotas do no: " + peer.getId());
+                        }
+                        finally {
+                            client.shutdown();
+                        }
+
+                    }
+                } catch (Exception e) {
+                    System.err.println("Remoção no no " + peer.getId() + " falhou: " + e.getMessage());
+                }
+            }
+        }
+
+        notifyAllClientsNodeRemoved(node);
+
+        RemoveNodeResponse response = RemoveNodeResponse.newBuilder()
+                .setMessage("No "+node.getId()+" removido do bootstrap e dos restantes nos participantes da rede")
+                .build();
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
+    public void notifyAllClientsNodeRemoved(Node node) {
+
+
+        String message = "📢 No " + node.getId()+ " removido do no bootstrap e de todos os nos participantes no kadelmia por falhar o ping";
+
+
+        BidNotification notification = BidNotification.newBuilder()
+                .setMessage(message)
+                .build();
+
+
+
+        for (ConnectedClient client : connectedClients) {
+            try {
+                client.observer.onNext(notification);
+            } catch (Exception e) {
+                connectedClients.remove(client);
+            }
+        }
+    }
+
+
+
+    @Override
+    public void endAuctionFromScript(BlockGrpc blockGrpc, StreamObserver<SendBidResponse> responseObserver) {
+        try {
+            Block block = Utils.convertBlockFromProto(blockGrpc);
+
+            Block lastBlock = routingTable.getLastBlockFromAuction(block.getAuction().getId());
+            if(lastBlock.getAuction().isActive()){
+                String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
+                if(result.equals("")){
+                    // Broadcast to peers
+                    for (KBucket kBucket : routingTable.getBuckets()) {
+                        if (kBucket.getNodes().isEmpty()) {
+                            continue; // Skip empty buckets
+                        }
+                        for (Node peer : kBucket.getNodes()) {
+                            try {
+                                GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                                try {
+                                    client.addBid(block);
+                                    System.out.println("Forwarded end auction to node: " + peer);
+                                }
+                                finally {
+                                    client.shutdown();
+                                }
+
+                            } catch (Exception e) {
+                                System.err.println("Broadcast to " + peer.getId() + " failed: " + e.getMessage());
+                                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                                try {
+                                    bootstrapClient.broadcastRemoveNode(peer);
+                                }
+                                finally {
+                                    bootstrapClient.shutdown();
+                                }
+                            }
+                        }
+                    }
+
+                    SendBidResponse response = SendBidResponse.newBuilder()
+                            .setMessage("Broadcasted Bid to all nodes")
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+
+                    notifyAllClients(block,3);
+                }
+                else {
+                    SendBidResponse response = SendBidResponse.newBuilder()
+                            .setMessage(result)
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                }
+
+            }
+
+
 
 
         } catch (Exception e) {

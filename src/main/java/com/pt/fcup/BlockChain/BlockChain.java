@@ -62,6 +62,7 @@ public class BlockChain {
 
 
         chain.add(block);
+        System.out.println("Bloco validado com sucesso e adcionando na blockChain");
         return "";
     }
 

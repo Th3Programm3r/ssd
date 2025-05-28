@@ -35,8 +35,12 @@ import kademlia.Kademlia.BidNotification;
 
 import java.io.IOException;
 import java.security.*;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 
@@ -46,6 +50,7 @@ public class GrpcClient {
     private final KademliaServiceGrpc.KademliaServiceStub asyncStub;
     public static PrivateKey privateKey;
     public static PublicKey publicKey;
+    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     public GrpcClient(String targetIp, int targetPort) {
         this.channel = ManagedChannelBuilder.forAddress(targetIp, targetPort)
@@ -90,7 +95,6 @@ public class GrpcClient {
     }
 
     public void printRoutingTable() {
-        System.out.println("Calling printRoutingTable()...");
         PrintRoutingTableResponse response = stub.printRoutingTable(Empty.newBuilder().build());
         System.out.println("TABLE: " + response.getMessage());
     }
@@ -121,6 +125,12 @@ public class GrpcClient {
     public void endAuction(Block block){
         BlockGrpc blockGrpc = Utils.convertBlockToProto(block);
         SendBidResponse response = stub.endAuction(blockGrpc);
+        System.out.println(response.getMessage());
+    }
+
+    public void endAuctionFromScript(Block block){
+        BlockGrpc blockGrpc = Utils.convertBlockToProto(block);
+        SendBidResponse response = stub.endAuctionFromScript(blockGrpc);
         System.out.println(response.getMessage());
     }
 
@@ -194,6 +204,85 @@ public class GrpcClient {
         });
     }
 
+    public static void printAuctions(List<Auction> auctions){
+        for(Auction auction:auctions){
+            System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+",estado:"+(auction.isActive()?"ativo":"inativo"));
+            for(Product product:auction.getProducts()){
+                System.out.println("Produto:" +product.getName());
+                System.out.println();
+            }
+        }
+    }
+
+
+    public void broadcastRemoveNode(Node node) {
+        NodeGrpc protoNode = Utils.convertNodeToProto(node);
+        Kademlia.RemoveNodeResponse response = stub.broadcastRemoveNode(protoNode);
+        System.out.println("Removed Node: " + response.getMessage());
+    }
+
+    public void removeNode(Node node) {
+        NodeGrpc protoNode = Utils.convertNodeToProto(node);
+        Kademlia.RemoveNodeResponse response = stub.removeNode(protoNode);
+        System.out.println("Removed Node: " + response.getMessage());
+    }
+
+
+    public void shutdown() throws InterruptedException {
+        channel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+
+
+    public static void startChecking(Node localNode, GrpcClient bootstrapClient,GrpcClient selfClient) {
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                checkInstants(localNode,bootstrapClient,selfClient);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }, 0, 1, TimeUnit.MINUTES);
+    }
+
+    private static void checkInstants(Node localNode, GrpcClient bootstrapClient,GrpcClient selfClient) throws InterruptedException {
+
+            Instant now = Instant.now();
+            List<Auction> auctions = selfClient.getAuctions();
+            for (Auction auction:auctions){
+                Instant end = auction.getCreationTimeStamp().plus(Duration.ofMinutes(auction.getHoursToCloseAuction()));
+                if(end.isBefore(now) && auction.isActive()){
+                    Block lastBlock = selfClient.getLastBlockFromAuction(auction);
+                    Auction updatedAuction = lastBlock.getAuction();
+                    updatedAuction.setActive(false);
+                    int lastIndex = updatedAuction.getBids().size() - 1;
+                    if (updatedAuction.getBids().size() > 0) {
+                        Bid lastBid = updatedAuction.getBids().get(lastIndex);
+                        lastBid.setSender(localNode.getId());
+                        updatedAuction.getBids().set(lastIndex, lastBid);
+                    } else {
+                        updatedAuction.setSenderHash(localNode.getId());
+                    }
+
+
+                    Instant currentTimestamp = Instant.now();
+                    Block block = new Block(lastBlock.getIndex() + 1, currentTimestamp.toEpochMilli(), updatedAuction, lastBlock.getHash());
+                    block.mineBlock(Utils.difficulty);
+
+
+
+                    bootstrapClient.endAuctionFromScript(block);
+
+                }
+            }
+
+
+
+
+
+
+    }
+
+
 
     //Quando um no é iniciado ele pede da rede o estado atual da blockchain****
     //Adcionar o auction o objeto bid, retirar do objeto bid o auction porque ja nao vai ser preciso****
@@ -218,6 +307,15 @@ public class GrpcClient {
     //Ver se ao criar um leilao com um utilizador em que um outro for registado apos se ele busca este no no no bootstrap
     //Ver se ao criar um leilao com uma assinatura falsa o que acontece
 
+
+
+    //Ao criar um leilao se nao selecionar nenhum produto nao criar nem enviar um bloco da bloackchain apra o kademlia********
+    //Adcionar Genesis Block ao print de blocos genesis*******
+    //Colocar tudo em portugues para ter mais coerencia
+    //Colocar o no bootstrap enviar una notificação a cada no para apagar um determinado no na tabela de rotas interna
+    //Script que de 30 minutos
+    //Alterar em vez de horas ser em minutos
+    //Ver porque quando se termina um leilao que não tenha nenhum bid da erro******
 
     public static void main(String[] args) throws Exception {
         // Generate RSA key pair
@@ -248,281 +346,297 @@ public class GrpcClient {
         BlockChainMap blockChainMap = bootstrapClient.getBlockChains();
         selfClient.setBlockChains(blockChainMap);
 
+        startChecking(localNode,bootstrapClient,selfClient);
 
-        while (true) {
-            Thread.sleep(1000);
-            System.out.println("Selecione a opção pretendida ou 0 para terminar");
-            System.out.println("1-Adcionar um produto");
-            System.out.println("2-Criar um leilão");
-            System.out.println("3-Visualizar leilões");
-            System.out.println("4-Visualizar o routing table");
-            System.out.println("5-Visualizar a blocking chain");
-            System.out.println("6-Terminar leilão");
-            int option = input.nextInt();
-            if(option==1){
-                input.nextLine();
-                System.out.println("Introduza o nome do produto");
-                String name = input.nextLine();
-                Product product = new Product(name);
-                //ADD Product to products json
-                List<Product> productsSaved=Utils.loadProductFromJsonFile("Products.json");
-                if(productsSaved!=null)
-                    productsSaved.add(product);
-                else {
-                    productsSaved=new ArrayList<>();
-                    productsSaved.add(product);
-                }
-
-                Utils.saveProductToJsonFile("Products.json",productsSaved);
-            }
-            else if(option==2){
-                System.out.println("Introduza a duração do leilao em horas");
-                int tempo = input.nextInt();
-                System.out.println("Selecione os produtos que queres dar lance");
-                //Read JSON AND LIST ALL PRODUCTS
-
-                List<Product> products = Utils.loadProductFromJsonFile("Products.json");
-                List<Product> auctionProducts = new ArrayList<>();
-                int i=1;
-                for (Product product:products){
-                    System.out.println(i + "-" + product.getName());
-                    i++;
-                }
-
-                while(true){
-                    System.out.println("Selecione o produto a adcionar no leilao ou 0 para terminar");
-                    System.out.println("Produto:");
-                    int choice=input.nextInt();
-                    if(choice==0)
-                        break;
-                    else if(choice>products.size() || choice<0){
-                        System.out.println("Opção não encontrada");
-                        break;
+        System.out.println();
+        try {
+            while (true) {
+                Thread.sleep(1000);
+                System.out.println("Selecione a opção pretendida ou 0 para terminar");
+                System.out.println("1-Adcionar um produto");
+                System.out.println("2-Criar um leilão");
+                System.out.println("3-Visualizar leilões");
+                System.out.println("4-Visualizar o routing table");
+                System.out.println("5-Visualizar a blocking chain");
+                System.out.println("6-Terminar leilão");
+                int option = input.nextInt();
+                System.out.println();
+                if (option == 1) {
+                    input.nextLine();
+                    System.out.println("Introduza o nome do produto");
+                    String name = input.nextLine();
+                    Product product = new Product(name);
+                    //ADD Product to products json
+                    List<Product> productsSaved = Utils.loadProductFromJsonFile("Products.json");
+                    if (productsSaved != null)
+                        productsSaved.add(product);
+                    else {
+                        productsSaved = new ArrayList<>();
+                        productsSaved.add(product);
                     }
-                    System.out.println("Introduza o preço inicial do produto");
-                    Float intialPrice = input.nextFloat();
-                    Product product = products.get(choice-1);
-                    product.setInitialPrice(intialPrice);
-                    auctionProducts.add(product);
-                }
-                //Fazer um sendAuction para o no bootstrap
-                Instant currentTimestamp = Instant.now();
-                Auction auction = new Auction(auctionProducts,currentTimestamp,tempo,localNode.getId());
-                Block block = new Block(0,currentTimestamp.toEpochMilli(),auction,"0");
-                block.mineBlock(Utils.difficulty);
-                String signature = Utils.signBlock(block,privateKey);
-                block.setSignature(signature);
-                bootstrapClient.sendAuction(block);
 
-            }
-            else if(option==3){
-                System.out.println("Selecione a opção pretendida");
-                System.out.println("1-Ver todos os leiloes");
-                System.out.println("2-Ver todos os leiloes em que participas");
-                int choice=input.nextInt();
-                if(choice==1){
-                    List<Auction> auctions=selfClient.getAuctions();
-                    for(Auction auction:auctions){
-                        System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
-                        for(Product product:auction.getProducts()){
-                            System.out.println("Produto:" +product.getName());
-                        }
+                    Utils.saveProductToJsonFile("Products.json", productsSaved);
+                } else if (option == 2) {
+                    System.out.println("Introduza a duração do leilao em minutos");
+                    int tempo = input.nextInt();
+                    System.out.println("Selecione os produtos que queres dar lance");
+                    //Read JSON AND LIST ALL PRODUCTS
+
+                    List<Product> products = Utils.loadProductFromJsonFile("Products.json");
+                    List<Product> auctionProducts = new ArrayList<>();
+                    int i = 1;
+                    for (Product product : products) {
+                        System.out.println(i + "-" + product.getName());
+                        i++;
                     }
-                    if(auctions.size()>0) {
-                        System.out.println("Selecione o Leilao que pretende dar lance ou 0 para sair");
-                        while (true) {
-                            int choice2 = input.nextInt();
-                            if (choice2 == 0)
-                                break;
-                            else if(!auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
-                                System.out.println("Opção não encontrada");
-                                break;
-                            }
 
-                            Auction selectedAuction = auctions.stream().filter(auction -> auction.getId()==choice2).findFirst().get();
-                            if(!selectedAuction.isActive()){
-                                System.out.println("Leilão selecionado encontra-se inativo");
-                                break;
-                            }
-                            List<Bid> auctionBids = selectedAuction.getBids();
-                            for (Product product : selectedAuction.getProducts()) {
-                                Block lastBlock = selfClient.getLastBlockFromAuction(selectedAuction);
-                                Bid lastBid=null;
-                                Optional<Bid> lastBidOptional = auctionBids.stream()
-                                        .filter(bid -> bid.getProductId() == product.getId())
-                                        .reduce((first, second) -> second); // keeps only the last element
-
-                                if (lastBidOptional.isPresent()) {
-                                    lastBid = lastBidOptional.get();
-                                    System.out.println("Produto:" + product.getName() + ", lance atual " + lastBid.getBidValue());
-                                    System.out.println("Minado do bloco "+lastBlock.getHash()+",criado por "+lastBid.getSender());
-                                } else {
-                                    System.out.println("Produto:" + product.getName() + ", lance atual " + product.getInitialPrice());
-                                    System.out.println("Minado do bloco "+lastBlock.getHash()+",criado por "+selectedAuction.getSenderHash());
-                                }
-
-                                System.out.println("Introduza o valor do teu lance para o produto ou 0 caso não esteja interessado");
-                                Float valor = input.nextFloat();
-                                if (valor>0f && lastBid!=null && valor > lastBid.getBidValue() || valor>0f && valor > product.getInitialPrice()) {
-                                    Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor,localNode.getId(),selectedAuction.getId());
-                                    //SEND BID USING GRPC
-                                    Instant currentTimestamp = Instant.now();
-
-                                    Auction updatedAuction = lastBlock.getAuction();
-                                    updatedAuction.addBid(newBid);
-
-                                    Block block = new Block(lastBlock.getIndex()+1,currentTimestamp.toEpochMilli(),updatedAuction,lastBlock.getHash());
-                                    block.mineBlock(Utils.difficulty);
-                                    String signature = Utils.signBlock(block,privateKey);
-                                    block.setSignature(signature);
-
-                                    bootstrapClient.sendBid(block);
-                                } else {
-                                    System.out.println("Valor do lance tem de ser maior do que o lance atual");
-                                }
-                            }
-
-                            break;
-                        }
-                    }
-                }
-                else if(choice==2){
-                    List<Auction> allAuctions=selfClient.getAuctions();
-                    List<Auction> auctions=
-                            allAuctions.stream().filter(auction -> auction.getSenderHash().equals(localNode.getId()) ||
-                                    auction.getBids().stream().anyMatch(bid -> localNode.getId().equals(bid.getSender()))
-                            ).collect(Collectors.toList());
-
-                    for(Auction auction:auctions){
-                        System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
-                        for(Product product:auction.getProducts()){
-                            System.out.println("Produto:" +product.getName());
-                        }
-                    }
-                    if(auctions.size()>0) {
-                        System.out.println("Selecione o Leilao que pretende dar lance ou 0 para sair");
-                        while (true) {
-                            int choice2 = input.nextInt();
-                            if (choice2 == 0)
-                                break;
-                            else if(!auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
-                                System.out.println("Opção não encontrada");
-                                break;
-                            }
-
-                            Auction selectedAuction = auctions.stream().filter(auction -> auction.getId()==choice2).findFirst().get();
-                            if(!selectedAuction.isActive()){
-                                System.out.println("Leilão selecionado encontra-se inativo");
-                                break;
-                            }
-                            List<Bid> auctionBids = selectedAuction.getBids();
-
-                            for (Product product : selectedAuction.getProducts()) {
-                                Block lastBlock = selfClient.getLastBlockFromAuction(selectedAuction);
-                                Bid lastBid=null;
-                                Optional<Bid> lastBidOptional = auctionBids.stream()
-                                        .filter(bid -> bid.getProductId() == product.getId())
-                                        .reduce((first, second) -> second); // keeps only the last element
-
-                                if (lastBidOptional.isPresent()) {
-                                    lastBid = lastBidOptional.get();
-                                    System.out.println("Produto:" + product.getName() + ", lance atual " + lastBid.getBidValue());
-                                    System.out.println("Minado do bloco "+lastBlock.getHash()+",criado por "+lastBid.getSender());
-                                } else {
-                                    System.out.println("Produto:" + product.getName() + ", lance atual " + product.getInitialPrice());
-                                    System.out.println("Minado do bloco "+lastBlock.getHash()+",criado por "+selectedAuction.getSenderHash());
-                                }
-
-                                System.out.println("Introduza o valor do teu lance para o produto ou 0 caso não esteja interessado");
-                                Float valor = input.nextFloat();
-                                if (valor>0f && lastBid!=null && valor > lastBid.getBidValue() || valor>0f && valor > product.getInitialPrice()) {
-                                    Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor,localNode.getId(),selectedAuction.getId());
-                                    //SEND BID USING GRPC
-                                    Instant currentTimestamp = Instant.now();
-
-                                    Auction updatedAuction = lastBlock.getAuction();
-                                    updatedAuction.addBid(newBid);
-
-                                    Block block = new Block(lastBlock.getIndex()+1,currentTimestamp.toEpochMilli(),updatedAuction,lastBlock.getHash());
-                                    block.mineBlock(Utils.difficulty);
-                                    String signature = Utils.signBlock(block,privateKey);
-                                    block.setSignature(signature);
-
-                                    bootstrapClient.sendBid(block);
-
-                                } else {
-                                    System.out.println("Valor do lance tem de ser maior do que o lance atual");
-                                }
-                            }
-
-                            break;
-                        }
-                    }
-                }
-            }
-            else if(option==4){
-                selfClient.printRoutingTable();
-            }
-            else if(option==5){
-                BlockChainMap currentBlockChainMap = bootstrapClient.getBlockChains();
-                Map<Integer,BlockChain> blockChains = Utils.convertBlockChainMapFromProto(currentBlockChainMap.getBlockChainMap());
-                for (Map.Entry<Integer, BlockChain> entry : blockChains.entrySet()) {
-                    System.out.println("--------Auction "+entry.getKey()+"--------");
-                    for(Block block : entry.getValue().getChain()){
-                        if(block.getAuction()!=null) {
-                            String generatedBy = block.getAuction().getBids().size() > 0 ? block.getAuction().getBids().get(block.getAuction().getBids().size() - 1).getSender() : block.getAuction().getSenderHash();
-                            System.out.println("Block:" + block.getHash() + ",generated by" + generatedBy);
-                        }
-                        else
-                            System.out.println("Genesis Block:" + block.getHash());
-                    }
-                }
-            }
-            else if(option == 6){
-                List<Auction> auctions=selfClient.getAuctions();
-
-                for(Auction auction:auctions){
-                    System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
-                }
-                if(auctions.size()>0) {
-                    System.out.println("Selecione o Leilao que pretende terminar ou 0 para sair");
                     while (true) {
-                        int choice2 = input.nextInt();
-                        if (choice2 == 0)
+                        System.out.println("Selecione o produto a adcionar no leilao ou 0 para terminar");
+                        System.out.println("Produto:");
+                        int choice = input.nextInt();
+                        if (choice == 0)
                             break;
-                        else if(!auctions.stream().anyMatch(auction -> auction.getId()==choice2)){
+                        else if (choice > products.size() || choice < 0) {
                             System.out.println("Opção não encontrada");
                             break;
                         }
+                        System.out.println("Introduza o preço inicial do produto");
+                        Float intialPrice = input.nextFloat();
+                        Product product = products.get(choice - 1);
+                        product.setInitialPrice(intialPrice);
+                        auctionProducts.add(product);
+                    }
+                    //Fazer um sendAuction para o no bootstrap
+                    if (auctionProducts.size() > 0) {
+                        Instant currentTimestamp = Instant.now();
+                        Auction auction = new Auction(auctionProducts, currentTimestamp, tempo, localNode.getId());
+                        Block block = new Block(0, currentTimestamp.toEpochMilli(), auction, "0");
+                        block.mineBlock(Utils.difficulty);
+                        String signature = Utils.signBlock(block, privateKey);
+                        block.setSignature(signature);
+                        bootstrapClient.sendAuction(block);
+                    } else {
+                        System.out.println("Não pode criar um leilão sem selecionar nenhum produto");
+                    }
 
-                        Auction selectedAuction = auctions.stream().filter(auction -> auction.getId()==choice2).findFirst().get();
-                        if(!selectedAuction.isActive()){
-                            System.out.println("Leilão selecionado encontra-se inativo");
+                } else if (option == 3) {
+                    System.out.println("Selecione a opção pretendida");
+                    System.out.println("1-Ver todos os leiloes");
+                    System.out.println("2-Ver todos os leiloes em que participas");
+                    int choice = input.nextInt();
+                    if (choice == 1) {
+                        List<Auction> auctions = selfClient.getAuctions();
+                        printAuctions(auctions);
+                        if (auctions.size() > 0) {
+                            System.out.println("Selecione o Leilao que pretende dar lance ou 0 para sair");
+                            while (true) {
+                                int choice2 = input.nextInt();
+                                if (choice2 == 0)
+                                    break;
+                                else if (!auctions.stream().anyMatch(auction -> auction.getId() == choice2)) {
+                                    System.out.println("Opção não encontrada");
+                                    break;
+                                }
+
+                                Auction selectedAuction = auctions.stream().filter(auction -> auction.getId() == choice2).findFirst().get();
+                                if (!selectedAuction.isActive()) {
+                                    System.out.println("Leilão selecionado encontra-se inativo");
+                                    break;
+                                }
+                                List<Bid> auctionBids = selectedAuction.getBids();
+                                for (Product product : selectedAuction.getProducts()) {
+                                    Block lastBlock = selfClient.getLastBlockFromAuction(selectedAuction);
+                                    Bid lastBid = null;
+                                    Optional<Bid> lastBidOptional = auctionBids.stream()
+                                            .filter(bid -> bid.getProductId() == product.getId())
+                                            .reduce((first, second) -> second); // keeps only the last element
+
+                                    if (lastBidOptional.isPresent()) {
+                                        lastBid = lastBidOptional.get();
+                                        System.out.println("Produto:" + product.getName() + ", lance atual " + lastBid.getBidValue());
+                                        System.out.println("Minado do bloco " + lastBlock.getHash() + ",criado por " + lastBid.getSender());
+                                    } else {
+                                        System.out.println("Produto:" + product.getName() + ", lance atual " + product.getInitialPrice());
+                                        System.out.println("Minado do bloco " + lastBlock.getHash() + ",criado por " + selectedAuction.getSenderHash());
+                                    }
+
+                                    System.out.println("Introduza o valor do teu lance para o produto ou 0 caso não esteja interessado");
+                                    Float valor = input.nextFloat();
+                                    if (valor > 0f && lastBid != null && valor > lastBid.getBidValue() || valor > 0f && valor > product.getInitialPrice()) {
+                                        Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor, localNode.getId(), selectedAuction.getId());
+                                        //SEND BID USING GRPC
+                                        Instant currentTimestamp = Instant.now();
+
+                                        Auction updatedAuction = lastBlock.getAuction();
+                                        updatedAuction.addBid(newBid);
+
+                                        Block block = new Block(lastBlock.getIndex() + 1, currentTimestamp.toEpochMilli(), updatedAuction, lastBlock.getHash());
+                                        block.mineBlock(Utils.difficulty);
+                                        String signature = Utils.signBlock(block, privateKey);
+                                        block.setSignature(signature);
+
+                                        bootstrapClient.sendBid(block);
+                                    } else {
+                                        System.out.println("Valor do lance tem de ser maior do que o lance atual");
+                                    }
+                                }
+
+                                break;
+                            }
+                        }
+                    } else if (choice == 2) {
+                        List<Auction> allAuctions = selfClient.getAuctions();
+                        List<Auction> auctions =
+                                allAuctions.stream().filter(auction -> auction.getSenderHash().equals(localNode.getId()) ||
+                                        auction.getBids().stream().anyMatch(bid -> localNode.getId().equals(bid.getSender()))
+                                ).collect(Collectors.toList());
+
+                        /*for(Auction auction:auctions){
+                            System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
+                            for(Product product:auction.getProducts()){
+                                System.out.println("Produto:" +product.getName());
+                                System.out.println();
+                            }
+                        }*/
+                        printAuctions(auctions);
+
+                        if (auctions.size() > 0) {
+                            System.out.println("Selecione o Leilao que pretende dar lance ou 0 para sair");
+                            while (true) {
+                                int choice2 = input.nextInt();
+                                if (choice2 == 0)
+                                    break;
+                                else if (!auctions.stream().anyMatch(auction -> auction.getId() == choice2)) {
+                                    System.out.println("Opção não encontrada");
+                                    break;
+                                }
+
+                                Auction selectedAuction = auctions.stream().filter(auction -> auction.getId() == choice2).findFirst().get();
+                                if (!selectedAuction.isActive()) {
+                                    System.out.println("Leilão selecionado encontra-se inativo");
+                                    break;
+                                }
+                                List<Bid> auctionBids = selectedAuction.getBids();
+
+                                for (Product product : selectedAuction.getProducts()) {
+                                    Block lastBlock = selfClient.getLastBlockFromAuction(selectedAuction);
+                                    Bid lastBid = null;
+                                    Optional<Bid> lastBidOptional = auctionBids.stream()
+                                            .filter(bid -> bid.getProductId() == product.getId())
+                                            .reduce((first, second) -> second); // keeps only the last element
+
+                                    if (lastBidOptional.isPresent()) {
+                                        lastBid = lastBidOptional.get();
+                                        System.out.println("Produto:" + product.getName() + ", lance atual " + lastBid.getBidValue());
+                                        System.out.println("Minado do bloco " + lastBlock.getHash() + ",criado por " + lastBid.getSender());
+                                    } else {
+                                        System.out.println("Produto:" + product.getName() + ", lance atual " + product.getInitialPrice());
+                                        System.out.println("Minado do bloco " + lastBlock.getHash() + ",criado por " + selectedAuction.getSenderHash());
+                                    }
+
+                                    System.out.println("Introduza o valor do teu lance para o produto ou 0 caso não esteja interessado");
+                                    Float valor = input.nextFloat();
+                                    if (valor > 0f && lastBid != null && valor > lastBid.getBidValue() || valor > 0f && valor > product.getInitialPrice()) {
+                                        Bid newBid = new Bid((int) (Instant.now().getEpochSecond()), product.getId(), valor, localNode.getId(), selectedAuction.getId());
+                                        //SEND BID USING GRPC
+                                        Instant currentTimestamp = Instant.now();
+
+                                        Auction updatedAuction = lastBlock.getAuction();
+                                        updatedAuction.addBid(newBid);
+
+                                        Block block = new Block(lastBlock.getIndex() + 1, currentTimestamp.toEpochMilli(), updatedAuction, lastBlock.getHash());
+                                        block.mineBlock(Utils.difficulty);
+                                        String signature = Utils.signBlock(block, privateKey);
+                                        block.setSignature(signature);
+
+                                        bootstrapClient.sendBid(block);
+
+                                    } else {
+                                        System.out.println("Valor do lance tem de ser maior do que o lance atual");
+                                    }
+                                }
+
+                                break;
+                            }
+                        }
+                    }
+                } else if (option == 4) {
+                    selfClient.printRoutingTable();
+                } else if (option == 5) {
+                    BlockChainMap currentBlockChainMap = bootstrapClient.getBlockChains();
+                    Map<Integer, BlockChain> blockChains = Utils.convertBlockChainMapFromProto(currentBlockChainMap.getBlockChainMap());
+                    for (Map.Entry<Integer, BlockChain> entry : blockChains.entrySet()) {
+                        System.out.println("--------Leilão " + entry.getKey() + " o qual os blocos foram gerados--------");
+                        for (Block block : entry.getValue().getChain()) {
+                            if (block.getAuction() != null && block.getAuction().getId() != 0) {
+                                String generatedBy = block.getAuction().getBids().size() > 0 ? block.getAuction().getBids().get(block.getAuction().getBids().size() - 1).getSender() : block.getAuction().getSenderHash();
+                                System.out.println("Block: " + block.getHash() + ",generated by " + generatedBy);
+                            } else
+                                System.out.println("Bloco Genesis : " + block.getHash());
+                        }
+                    }
+                } else if (option == 6) {
+                    List<Auction> auctions = selfClient.getAuctions();
+
+                    /*for(Auction auction:auctions){
+                        System.out.println("Leilão "+auction.getId()+" criado por "+auction.getSenderHash()+" ,estado:"+(auction.isActive()?"ativo":"inativo"));
+
+                    }*/
+                    printAuctions(auctions);
+
+                    if (auctions.size() > 0) {
+                        System.out.println("Selecione o Leilao que pretende terminar ou 0 para sair");
+                        while (true) {
+                            int choice2 = input.nextInt();
+                            if (choice2 == 0)
+                                break;
+                            else if (!auctions.stream().anyMatch(auction -> auction.getId() == choice2)) {
+                                System.out.println("Opção não encontrada");
+                                break;
+                            }
+
+                            Auction selectedAuction = auctions.stream().filter(auction -> auction.getId() == choice2).findFirst().get();
+                            if (!selectedAuction.isActive()) {
+                                System.out.println("Leilão selecionado encontra-se inativo");
+                                break;
+                            }
+                            Block lastBlock = selfClient.getLastBlockFromAuction(selectedAuction);
+                            Auction updatedAuction = lastBlock.getAuction();
+                            updatedAuction.setActive(false);
+                            int lastIndex = updatedAuction.getBids().size() - 1;
+                            if (updatedAuction.getBids().size() > 0) {
+                                Bid lastBid = updatedAuction.getBids().get(lastIndex);
+                                lastBid.setSender(localNode.getId());
+                                updatedAuction.getBids().set(lastIndex, lastBid);
+                            } else {
+                                updatedAuction.setSenderHash(localNode.getId());
+                            }
+
+
+                            Instant currentTimestamp = Instant.now();
+                            Block block = new Block(lastBlock.getIndex() + 1, currentTimestamp.toEpochMilli(), updatedAuction, lastBlock.getHash());
+                            block.mineBlock(Utils.difficulty);
+                            String signature = Utils.signBlock(block, privateKey);
+                            block.setSignature(signature);
+
+                            bootstrapClient.endAuction(block);
+
+
                             break;
                         }
-                        Block lastBlock = selfClient.getLastBlockFromAuction(selectedAuction);
-                        Auction updatedAuction = lastBlock.getAuction();
-                        updatedAuction.setActive(false);
-
-                        Instant currentTimestamp = Instant.now();
-                        Block block = new Block(lastBlock.getIndex()+1,currentTimestamp.toEpochMilli(),updatedAuction,lastBlock.getHash());
-                        block.mineBlock(Utils.difficulty);
-                        String signature = Utils.signBlock(block,privateKey);
-                        block.setSignature(signature);
-
-                        bootstrapClient.endAuction(block);
-
-
-                        break;
                     }
+                } else {
+                    System.out.println("Opção não encontrada");
+                    break;
                 }
-            }
-            else{
-                System.out.println("Opção não encontrada");
-                break;
+                System.out.println();
             }
         }
-
+        finally {
+            bootstrapClient.shutdown();
+            selfClient.shutdown();
+            input.close();
+        }
 
 
 

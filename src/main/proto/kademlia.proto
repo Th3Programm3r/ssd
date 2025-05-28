@@ -24,6 +24,8 @@ service KademliaService {
   rpc AddBid(BlockGrpc) returns (SendBidResponse);
   rpc ListenForBidNotifications(SubscribeRequest) returns (stream BidNotification);
   rpc EndAuction(BlockGrpc) returns (SendBidResponse);
+  rpc BroadcastRemoveNode(NodeGrpc) returns (RemoveNodeResponse);
+  rpc EndAuctionFromScript(BlockGrpc) returns (SendBidResponse);
 }
 
 message NodeGrpc {

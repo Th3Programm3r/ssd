@@ -140,8 +140,8 @@ public class RoutingTable {
             KBucket bucket = buckets.get(i);
             if (!bucket.getNodes().isEmpty()) {
                 for (Node node : bucket.getNodes()) {
-                    if(!localNode.getId().equals(node.getId()))
-                        sendPing(node);
+                    //if(!localNode.getId().equals(node.getId()))
+                       // sendPing(node);
                 }
             }
         }
@@ -168,8 +168,10 @@ public class RoutingTable {
 
     public void removeNode(Node node) {
         int index = getBucketIndex(node.getId());
-        buckets.get(index).removeNode(node);
-        sendDeleteNotificationSameBucket(index,node);
+        if(buckets.get(index).getNodes().stream().anyMatch(_node->_node.getId().equals(node.getId()))){
+            buckets.get(index).removeNode(node);
+        }
+        //sendDeleteNotificationSameBucket(index,node);
     }
 
     public void saveToJsonFile(String filename) {
