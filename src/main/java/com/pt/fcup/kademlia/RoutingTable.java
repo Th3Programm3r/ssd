@@ -44,6 +44,17 @@ public class RoutingTable {
         return ID_BITS - distance.bitLength(); // Determines the prefix length
     }
 
+    public void updateNode(Node node){
+
+
+        int index = getBucketIndex(node.getId());
+        KBucket bucket = buckets.get(index);
+        Node storedNode = bucket.findNode(node);
+        if (storedNode != null) {
+            storedNode.setReputation(node.getReputation());
+        }
+    }
+
     public void addNode(Node node) {
         nodeIdToAddressMap.put(node.getId(), new InetSocketAddress(node.getIp(), node.getPort()));
         nodeHashPublicKey.put(node.getId(),node.getPublicKey());

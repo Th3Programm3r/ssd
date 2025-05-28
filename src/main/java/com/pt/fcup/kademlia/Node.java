@@ -17,6 +17,7 @@ public class Node {
     private String ip;
     private int port;
     private String publicKey;
+    private int reputation;
     //Lista Nos vizinhos em hash
     //List dAs transações e quem fex
     //Validar se a hash ta correta de acordo com a lista interna das hashs das transaçoes
@@ -34,12 +35,14 @@ public class Node {
         this.ip = getLocalIp();
         this.port = getFreePort();
         this.id = generateNodeId(this.ip, this.port);
+        this.reputation = 1;
     }
 
     public Node(String ip, int port) {
         this.ip = ip;
         this.port = port;
         this.id = generateNodeId(ip, port);
+        this.reputation = 1;
     }
 
     public Node(String ip, int port, String publicKey) {
@@ -47,12 +50,14 @@ public class Node {
         this.port = port;
         this.id = generateNodeId(ip, port);
         this.publicKey = publicKey;
+        this.reputation = 1;
     }
 
     public Node(String id, String ip, int port) {
         this.ip = ip;
         this.port = port;
         this.id = id;
+        this.reputation = 1;
     }
 
     public Node(String id, String ip, int port, String publicKey) {
@@ -60,6 +65,15 @@ public class Node {
         this.ip = ip;
         this.port = port;
         this.publicKey = publicKey;
+        this.reputation = 1;
+    }
+
+    public Node(String id, String ip, int port, String publicKey, int reputation) {
+        this.id = id;
+        this.ip = ip;
+        this.port = port;
+        this.publicKey = publicKey;
+        this.reputation = reputation;
     }
 
     public String getId() {
@@ -118,5 +132,13 @@ public class Node {
 
     public void setPublicKey(String publicKey) {
         this.publicKey = publicKey;
+    }
+
+    public int getReputation() {
+        return reputation;
+    }
+
+    public void setReputation(int reputation) {
+        this.reputation = reputation;
     }
 }

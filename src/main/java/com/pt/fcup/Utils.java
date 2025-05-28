@@ -97,7 +97,7 @@ public class Utils {
     }
 
     public static Node convertNodeFromProto(NodeGrpc proto) {
-        Node node = new Node(proto.getId(),proto.getIp(),proto.getPort(),proto.getPublicKey());
+        Node node = new Node(proto.getId(),proto.getIp(),proto.getPort(),proto.getPublicKey(),proto.getReputation());
 
         return node;
     }
@@ -108,6 +108,7 @@ public class Utils {
                 .setIp(node.getIp())
                 .setPort(node.getPort())
                 .setPublicKey(node.getPublicKey())
+                .setReputation(node.getReputation())
                 .build();
 
         return response;

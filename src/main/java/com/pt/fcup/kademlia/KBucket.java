@@ -72,4 +72,10 @@ public class KBucket {
 
         return nodeToFind;
     }
+
+    public void updateReputation(Node node){
+        Node oldNode=findNode(node);
+        oldNode.setReputation(node.getReputation());
+
+    }
 }

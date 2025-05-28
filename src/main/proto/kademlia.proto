@@ -33,6 +33,7 @@ message NodeGrpc {
   string ip = 2;
   int32 port = 3;
   string publicKey=4;
+  int32 reputation=5;
 }
 
 message PingRequest {

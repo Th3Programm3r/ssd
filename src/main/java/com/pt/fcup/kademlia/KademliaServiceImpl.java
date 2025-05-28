@@ -78,6 +78,8 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
                         GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
                         try {
                             try {
+                                peer.setReputation(peer.getReputation()+1);
+                                routingTable.updateNode(peer);
                                 client.addNodeToRoutingTable(newNode);
                                 System.out.println("Novo nó enviado para o nó: " + peer.getId());
                             }
@@ -165,99 +167,131 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
 
     @Override
     public void broadcastAuction(BlockGrpc blockGrpc, StreamObserver<AuctionResponse> responseObserver) {
-        try {
-            Block block = Utils.convertBlockFromProto(blockGrpc);
-            System.out.println("Bloco recebido "+block.getHash());
-            String blockSignature = block.getSignature();
+        Node _node = routingTable.findNodeByHash(blockGrpc.getAuction().getSenderHash());
+        if(_node.getReputation()>1){
+            try {
+                Block block = Utils.convertBlockFromProto(blockGrpc);
+                System.out.println("Bloco recebido "+block.getHash());
+                String blockSignature = block.getSignature();
 
-            String blockHash = block.getAuction().getSenderHash();
-            String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                String blockHash = block.getAuction().getSenderHash();
+                String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
-            PublicKey publicKey = null;
-            if (publicKeyString != null && !publicKeyString.isEmpty()) {
-                publicKey = Utils.decodePublicKey(publicKeyString);
-            }
+                PublicKey publicKey = null;
+                if (publicKeyString != null && !publicKeyString.isEmpty()) {
+                    publicKey = Utils.decodePublicKey(publicKeyString);
+                }
 
-            // If public key is missing, request from bootstrap first
-            if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
-                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-                try{
-                    Node node = bootstrapClient.findNodeByHash(blockHash);
-                    if (node != null) {
-                        routingTable.addNode(node);
-                        publicKeyString = routingTable.getPublicKeyByHash(blockHash);
-                        publicKey = Utils.decodePublicKey(publicKeyString);
+                // If public key is missing, request from bootstrap first
+                if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
+                    GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                    try{
+                        Node node = bootstrapClient.findNodeByHash(blockHash);
+                        if (node != null) {
+                            routingTable.addNode(node);
+                            publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                            publicKey = Utils.decodePublicKey(publicKeyString);
+                        }
                     }
+                    finally {
+                        bootstrapClient.shutdown();
+                    }
+                }
+
+                Block blockToVerify=block;
+                blockToVerify.setSignature("");
+                boolean verify=publicKey!=null?Utils.verifyBlock(blockToVerify, blockSignature, publicKey):false;
+
+                // Only add to blockchain if verification is successful
+                if (verify) {
+                    BlockChain blockChain = new BlockChain();
+                    blockChain.addBlockToBlockChain(block);
+                    routingTable.addToBlockChains(block.getAuction().getId(),blockChain);
+                    // Broadcast to peers
+                    for (KBucket kBucket : routingTable.getBuckets()) {
+                        if (kBucket.getNodes().isEmpty()) {
+                            continue; // Skip empty buckets
+                        }
+                        for (Node peer : kBucket.getNodes()) {
+                            GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                            try {
+                                try {
+                                    peer.setReputation(peer.getReputation()+1);
+                                    routingTable.updateNode(peer);
+                                    client.addAuction(block);
+                                    System.out.println("Novo leilão enviado para o nó: " + peer.getId());
+                                }
+                                finally {
+                                    client.shutdown();
+                                }
+                            } catch (Exception e) {
+                                client.shutdown();
+                                System.err.println("Envio para o nó " + peer.getId() + " falhou: " + e.getMessage());
+                                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                                try {
+                                    bootstrapClient.broadcastRemoveNode(peer);
+                                }
+                                finally {
+                                    bootstrapClient.shutdown();
+                                }
+                            }
+                        }
+                    }
+
+
+
+
+                    notifyAllClients(block,1);
+
+                    // Send success response
+                    AuctionResponse response = AuctionResponse.newBuilder()
+                            .setMessage("Leilão adcionado em todos os nós")
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                } else {
+                    System.err.println("Assinatura do bloco invalido ou chave publica inexistente");
+                    Node node = routingTable.findNodeByHash(block.getAuction().getSenderHash());
+                    node.setReputation(node.getReputation()-1);
+                    routingTable.updateNode(node);
+                }
+
+
+
+            } catch (Exception e) {
+                // Proper gRPC error handling
+                responseObserver.onError(
+                        Status.INTERNAL
+                                .withDescription("Erro ao processar o envio de leilões: " + e.getMessage())
+                                .withCause(e)
+                                .asRuntimeException()
+                );
+            }
+        }
+        else{
+            try {
+                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                try {
+                    bootstrapClient.broadcastRemoveNode(_node);
                 }
                 finally {
                     bootstrapClient.shutdown();
                 }
             }
-
-            Block blockToVerify=block;
-            blockToVerify.setSignature("");
-            boolean verify=publicKey!=null?Utils.verifyBlock(blockToVerify, blockSignature, publicKey):false;
-
-            // Only add to blockchain if verification is successful
-            if (verify) {
-                BlockChain blockChain = new BlockChain();
-                blockChain.addBlockToBlockChain(block);
-                routingTable.addToBlockChains(block.getAuction().getId(),blockChain);
-            } else {
-                System.err.println("Assinatura do bloco invalido ou chave publica inexistente");
+            catch (Exception e) {
+                // Proper gRPC error handling
+                responseObserver.onError(
+                        Status.INTERNAL
+                                .withDescription("Erro ao processar a remoção do nó: " + e.getMessage())
+                                .withCause(e)
+                                .asRuntimeException()
+                );
             }
 
-            // Broadcast to peers
-            for (KBucket kBucket : routingTable.getBuckets()) {
-                if (kBucket.getNodes().isEmpty()) {
-                    continue; // Skip empty buckets
-                }
-                for (Node peer : kBucket.getNodes()) {
-                    GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                    try {
-                        try {
-                            client.addAuction(block);
-                            System.out.println("Novo leilão enviado para o nó: " + peer.getId());
-                        }
-                        finally {
-                            client.shutdown();
-                        }
-                    } catch (Exception e) {
-                        client.shutdown();
-                        System.err.println("Envio para o nó " + peer.getId() + " falhou: " + e.getMessage());
-                        GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-                        try {
-                            bootstrapClient.broadcastRemoveNode(peer);
-                        }
-                        finally {
-                            bootstrapClient.shutdown();
-                        }
-                    }
-                }
-            }
-
-
-
-
-            notifyAllClients(block,1);
-
-            // Send success response
-            AuctionResponse response = AuctionResponse.newBuilder()
-                    .setMessage("Leilão adcionado em todos os nós")
-                    .build();
-
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-
-        } catch (Exception e) {
-            // Proper gRPC error handling
-            responseObserver.onError(
-                    Status.INTERNAL
-                            .withDescription("Erro ao processar o envio de leilões: " + e.getMessage())
-                            .withCause(e)
-                            .asRuntimeException()
-            );
         }
+
+
     }
 
 
@@ -303,99 +337,115 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     public void sendBid(BlockGrpc blockGrpc, StreamObserver<SendBidResponse> responseObserver) {
         try {
             Block block = Utils.convertBlockFromProto(blockGrpc);
-            String blockSignature = block.getSignature();
-            Auction auction = block.getAuction();
-            int lastIndex = auction.getBids().size()-1;
-            String blockHash = auction.getBids().get(lastIndex).getSender();
-            String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+            Node _node = routingTable.findNodeByHash(block.getAuction().getBids().get(block.getAuction().getBids().size()-1).getSender());
+            if(_node !=null && _node.getReputation()>1){
+                String blockSignature = block.getSignature();
+                Auction auction = block.getAuction();
+                int lastIndex = auction.getBids().size()-1;
+                String blockHash = auction.getBids().get(lastIndex).getSender();
+                String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
-            PublicKey publicKey = null;
-            if (publicKeyString != null && !publicKeyString.isEmpty()) {
-                publicKey = Utils.decodePublicKey(publicKeyString);
+                PublicKey publicKey = null;
+                if (publicKeyString != null && !publicKeyString.isEmpty()) {
+                    publicKey = Utils.decodePublicKey(publicKeyString);
+                }
+
+                // If public key is missing, request from bootstrap first
+                if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
+                    GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                    try {
+                        Node node = bootstrapClient.findNodeByHash(blockHash);
+                        if (node != null) {
+                            routingTable.addNode(node);
+                            publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                            publicKey = Utils.decodePublicKey(publicKeyString);
+                        }
+                    }
+                    finally {
+                        bootstrapClient.shutdown();
+                    }
+                }
+
+                Block blockToVerify=block;
+                blockToVerify.setSignature("");
+                boolean verify=publicKey!=null?Utils.verifyBlock(blockToVerify, blockSignature, publicKey):false;
+
+                // Only add to blockchain if verification is successful
+                if (verify) {
+                    String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
+                    if(result.equals("")){
+                        // Broadcast to peers
+                        for (KBucket kBucket : routingTable.getBuckets()) {
+                            if (kBucket.getNodes().isEmpty()) {
+                                continue; // Skip empty buckets
+                            }
+                            for (Node peer : kBucket.getNodes()) {
+                                GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                                try {
+                                    try {
+                                        peer.setReputation(peer.getReputation()+1);
+                                        routingTable.updateNode(peer);
+                                        client.addBid(block);
+                                        System.out.println("Novo lance enviado para o nó: " + peer.getId());
+                                    }
+                                    finally {
+                                        client.shutdown();
+                                    }
+
+                                } catch (Exception e) {
+                                    client.shutdown();
+                                    System.err.println("Erro ao enviar o lance para o nó " + peer.getId() + " " + e.getMessage());
+                                    GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                                    try {
+                                        bootstrapClient.broadcastRemoveNode(peer);
+                                    }
+                                    finally {
+                                        bootstrapClient.shutdown();
+                                    }
+
+                                }
+                            }
+                        }
+
+                        notifyAllClients(block,2);
+
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage("Lance enviado para todos os nós")
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+                    }
+                    else {
+                        _node.setReputation(_node.getReputation()-1);
+                        routingTable.updateNode(_node);
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage(result)
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+                    }
+                } else {
+                    _node.setReputation(_node.getReputation()-1);
+                    routingTable.updateNode(_node);
+                    SendBidResponse response = SendBidResponse.newBuilder()
+                            .setMessage("Assinatura invalida no bloco ou chave publica inexistente")
+                            .build();
+
+                    responseObserver.onNext(response);
+                    responseObserver.onCompleted();
+                }
             }
-
-            // If public key is missing, request from bootstrap first
-            if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
+            else{
                 GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
                 try {
-                    Node node = bootstrapClient.findNodeByHash(blockHash);
-                    if (node != null) {
-                        routingTable.addNode(node);
-                        publicKeyString = routingTable.getPublicKeyByHash(blockHash);
-                        publicKey = Utils.decodePublicKey(publicKeyString);
-                    }
+                    bootstrapClient.broadcastRemoveNode(_node);
                 }
                 finally {
                     bootstrapClient.shutdown();
                 }
             }
-
-            Block blockToVerify=block;
-            blockToVerify.setSignature("");
-            boolean verify=publicKey!=null?Utils.verifyBlock(blockToVerify, blockSignature, publicKey):false;
-
-            // Only add to blockchain if verification is successful
-            if (verify) {
-                String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
-                if(result.equals("")){
-                    // Broadcast to peers
-                    for (KBucket kBucket : routingTable.getBuckets()) {
-                        if (kBucket.getNodes().isEmpty()) {
-                            continue; // Skip empty buckets
-                        }
-                        for (Node peer : kBucket.getNodes()) {
-                            GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                            try {
-                                try {
-                                    client.addBid(block);
-                                    System.out.println("Novo lance enviado para o nó: " + peer.getId());
-                                }
-                                finally {
-                                    client.shutdown();
-                                }
-
-                            } catch (Exception e) {
-                                client.shutdown();
-                                System.err.println("Erro ao enviar o lance para o nó " + peer.getId() + " " + e.getMessage());
-                                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-                                try {
-                                    bootstrapClient.broadcastRemoveNode(peer);
-                                }
-                                finally {
-                                    bootstrapClient.shutdown();
-                                }
-
-                            }
-                        }
-                    }
-
-                    notifyAllClients(block,2);
-
-                    SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage("Lance enviado para todos os nós")
-                            .build();
-
-                    responseObserver.onNext(response);
-                    responseObserver.onCompleted();
-                }
-                else {
-                    SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage(result)
-                            .build();
-
-                    responseObserver.onNext(response);
-                    responseObserver.onCompleted();
-                }
-            } else {
-                SendBidResponse response = SendBidResponse.newBuilder()
-                        .setMessage("Assinatura invalida no bloco ou chave publica inexistente")
-                        .build();
-
-                responseObserver.onNext(response);
-                responseObserver.onCompleted();
-            }
-
-
         } catch (Exception e) {
             // Proper gRPC error handling
             responseObserver.onError(
@@ -647,102 +697,120 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     public void endAuction(BlockGrpc blockGrpc, StreamObserver<SendBidResponse> responseObserver) {
         try {
             Block block = Utils.convertBlockFromProto(blockGrpc);
-            String blockSignature = block.getSignature();
-            Auction auction = block.getAuction();
-            int lastIndex = auction.getBids().size()-1;
-            String blockHash = "";
-            if(auction.getBids().size()>0){
-                blockHash = auction.getBids().get(lastIndex).getSender();
-            }
-            else{
-                blockHash = auction.getSenderHash();
-            }
-            String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+            Node _node = new Node();
+            if(block.getAuction().getBids().size()>0)
+                _node = routingTable.findNodeByHash(block.getAuction().getBids().get(block.getAuction().getBids().size()-1).getSender());
+            else
+                _node = routingTable.findNodeByHash(block.getAuction().getSenderHash());
+            if(_node.getReputation()>1){
+                String blockSignature = block.getSignature();
+                Auction auction = block.getAuction();
+                int lastIndex = auction.getBids().size()-1;
+                String blockHash = "";
+                if(auction.getBids().size()>0){
+                    blockHash = auction.getBids().get(lastIndex).getSender();
+                }
+                else{
+                    blockHash = auction.getSenderHash();
+                }
+                String publicKeyString = routingTable.getPublicKeyByHash(blockHash);
 
-            PublicKey publicKey = null;
-            if (publicKeyString != null && !publicKeyString.isEmpty()) {
-                publicKey = Utils.decodePublicKey(publicKeyString);
-            }
+                PublicKey publicKey = null;
+                if (publicKeyString != null && !publicKeyString.isEmpty()) {
+                    publicKey = Utils.decodePublicKey(publicKeyString);
+                }
 
-            // If public key is missing, request from bootstrap first
-            if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
-                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                // If public key is missing, request from bootstrap first
+                if (publicKey == null && !routingTable.getLocalNode().getIp().equals(Utils.bootstrapIp) && routingTable.getLocalNode().getPort()!=Utils.bootstrapPort) {
+                    GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
 
-                try {
-                    Node node = bootstrapClient.findNodeByHash(blockHash);
-                    if (node != null) {
-                        routingTable.addNode(node);
-                        publicKeyString = routingTable.getPublicKeyByHash(blockHash);
-                        publicKey = Utils.decodePublicKey(publicKeyString);
+                    try {
+                        Node node = bootstrapClient.findNodeByHash(blockHash);
+                        if (node != null) {
+                            routingTable.addNode(node);
+                            publicKeyString = routingTable.getPublicKeyByHash(blockHash);
+                            publicKey = Utils.decodePublicKey(publicKeyString);
+                        }
+                    }
+                    finally {
+                        bootstrapClient.shutdown();
                     }
                 }
-                finally {
-                    bootstrapClient.shutdown();
-                }
-            }
 
-            Block blockToVerify=block;
-            blockToVerify.setSignature("");
-            boolean verify=publicKey!=null?Utils.verifyBlock(blockToVerify, blockSignature, publicKey):false;
+                Block blockToVerify=block;
+                blockToVerify.setSignature("");
+                boolean verify=publicKey!=null?Utils.verifyBlock(blockToVerify, blockSignature, publicKey):false;
 
-            // Only add to blockchain if verification is successful
-            if (verify) {
-                String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
-                if(result.equals("")){
-                    // Broadcast to peers
-                    for (KBucket kBucket : routingTable.getBuckets()) {
-                        if (kBucket.getNodes().isEmpty()) {
-                            continue; // Skip empty buckets
-                        }
-                        for (Node peer : kBucket.getNodes()) {
-                            try {
-                                GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                // Only add to blockchain if verification is successful
+                if (verify) {
+                    String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
+                    if(result.equals("")){
+                        // Broadcast to peers
+                        for (KBucket kBucket : routingTable.getBuckets()) {
+                            if (kBucket.getNodes().isEmpty()) {
+                                continue; // Skip empty buckets
+                            }
+                            for (Node peer : kBucket.getNodes()) {
                                 try {
-                                    client.addBid(block);
-                                    System.out.println("Envio de fim de leilão enviado ao nó: " + peer.getId());
-                                }
-                                finally {
-                                    client.shutdown();
-                                }
+                                    GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                                    try {
+                                        peer.setReputation(peer.getReputation()+1);
+                                        routingTable.updateNode(peer);
+                                        client.addBid(block);
+                                        System.out.println("Envio de fim de leilão enviado ao nó: " + peer.getId());
+                                    }
+                                    finally {
+                                        client.shutdown();
+                                    }
 
-                            } catch (Exception e) {
-                                System.err.println("Envio de fim de leilão falhou para o nó " + peer.getId() + ": " + e.getMessage());
-                                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
-                                try {
-                                    bootstrapClient.broadcastRemoveNode(peer);
-                                }
-                                finally {
-                                    bootstrapClient.shutdown();
+                                } catch (Exception e) {
+                                    System.err.println("Envio de fim de leilão falhou para o nó " + peer.getId() + ": " + e.getMessage());
+                                    GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                                    try {
+                                        bootstrapClient.broadcastRemoveNode(peer);
+                                    }
+                                    finally {
+                                        bootstrapClient.shutdown();
+                                    }
                                 }
                             }
                         }
+
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage("Bloco "+block.getHash()+" enviado para todos os nos e leilao "+block.getAuction().getId()+" terminado")
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+
+                        notifyAllClients(block,3);
                     }
+                    else {
+                        _node.setReputation(_node.getReputation()-1);
+                        routingTable.updateNode(_node);
+
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage(result)
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+                    }
+                } else {
+                    _node.setReputation(_node.getReputation()-1);
+                    routingTable.updateNode(_node);
 
                     SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage("Bloco "+block.getHash()+" enviado para todos os nos e leilao "+block.getAuction().getId()+" terminado")
+                            .setMessage("Assinatura do bloco invalido ou chave publica inexistente")
                             .build();
 
                     responseObserver.onNext(response);
                     responseObserver.onCompleted();
-
-                    notifyAllClients(block,3);
                 }
-                else {
-                    SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage(result)
-                            .build();
 
-                    responseObserver.onNext(response);
-                    responseObserver.onCompleted();
-                }
-            } else {
-                SendBidResponse response = SendBidResponse.newBuilder()
-                        .setMessage("Assinatura do bloco invalido ou chave publica inexistente")
-                        .build();
-
-                responseObserver.onNext(response);
-                responseObserver.onCompleted();
             }
+
+
 
 
         } catch (Exception e) {
@@ -761,37 +829,51 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     @Override
     public void broadcastRemoveNode(NodeGrpc request, StreamObserver<RemoveNodeResponse> responseObserver) {
         Node node = Utils.convertNodeFromProto(request);
-        routingTable.removeNode(node);
-        for (KBucket kBucket : routingTable.getBuckets()) {
-            if (kBucket.getNodes().isEmpty()) {
-                continue; // Skip empty buckets
-            }
-            for (Node peer : kBucket.getNodes()) {
-                try {
-                    if(!peer.getId().equals(node.getId())){
-                        GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                        try {
-                            client.removeNode(node);
-                            System.out.println("Nó removido da tabela de rotas do nó: " + peer.getId());
-                        }
-                        finally {
-                            client.shutdown();
-                        }
+        if(node.getReputation()<1){
+            routingTable.removeNode(node);
+            for (KBucket kBucket : routingTable.getBuckets()) {
+                if (kBucket.getNodes().isEmpty()) {
+                    continue; // Skip empty buckets
+                }
+                for (Node peer : kBucket.getNodes()) {
+                    try {
+                        if(!peer.getId().equals(node.getId())){
+                            GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                            try {
+                                client.removeNode(node);
+                                System.out.println("Nó removido da tabela de rotas do nó: " + peer.getId());
+                            }
+                            finally {
+                                client.shutdown();
+                            }
 
+                        }
+                    } catch (Exception e) {
+                        System.err.println("Remoção no nó " + peer.getId() + " falhou: " + e.getMessage());
                     }
-                } catch (Exception e) {
-                    System.err.println("Remoção no nó " + peer.getId() + " falhou: " + e.getMessage());
                 }
             }
+
+            notifyAllClientsNodeRemoved(node);
+
+            RemoveNodeResponse response = RemoveNodeResponse.newBuilder()
+                    .setMessage("Nó "+node.getId()+" removido do bootstrap e dos restantes nós participantes da rede")
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }
+        else {
+            node.setReputation(node.getReputation()-1);
+            routingTable.updateNode(node);
+
+
+            RemoveNodeResponse response = RemoveNodeResponse.newBuilder()
+                    .setMessage("Nó " + node.getId() + " não foi removido do bootstrap e dos restantes nós participantes da rede mas a reputação foi diminuida")
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
         }
 
-        notifyAllClientsNodeRemoved(node);
-
-        RemoveNodeResponse response = RemoveNodeResponse.newBuilder()
-                .setMessage("Nó "+node.getId()+" removido do bootstrap e dos restantes nós participantes da rede")
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
     }
 
     public void notifyAllClientsNodeRemoved(Node node) {
@@ -821,58 +903,75 @@ public class KademliaServiceImpl  extends KademliaServiceGrpc.KademliaServiceImp
     public void endAuctionFromScript(BlockGrpc blockGrpc, StreamObserver<SendBidResponse> responseObserver) {
         try {
             Block block = Utils.convertBlockFromProto(blockGrpc);
+            Node _node = routingTable.findNodeByHash(block.getAuction().getBids().get(block.getAuction().getBids().size()-1).getSender());
 
-            Block lastBlock = routingTable.getLastBlockFromAuction(block.getAuction().getId());
-            if(lastBlock.getAuction().isActive()){
-                String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
-                if(result.equals("")){
-                    // Broadcast to peers
-                    for (KBucket kBucket : routingTable.getBuckets()) {
-                        if (kBucket.getNodes().isEmpty()) {
-                            continue; // Skip empty buckets
-                        }
-                        for (Node peer : kBucket.getNodes()) {
-                            try {
-                                GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
-                                try {
-                                    client.addBid(block);
-                                    System.out.println("Fim do leilão enviado para o nó: " + peer.getId());
-                                }
-                                finally {
-                                    client.shutdown();
-                                }
 
-                            } catch (Exception e) {
-                                System.err.println("Erro ao enviar o fim de leilão para o nó " + peer.getId() + ": " + e.getMessage());
-                                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+            if(_node.getReputation()>1){
+                Block lastBlock = routingTable.getLastBlockFromAuction(block.getAuction().getId());
+                if(lastBlock.getAuction().isActive()){
+                    String result = routingTable.addBlockToBlockChain(block.getAuction().getId(),block);
+                    if(result.equals("")){
+                        // Broadcast to peers
+                        for (KBucket kBucket : routingTable.getBuckets()) {
+                            if (kBucket.getNodes().isEmpty()) {
+                                continue; // Skip empty buckets
+                            }
+                            for (Node peer : kBucket.getNodes()) {
                                 try {
-                                    bootstrapClient.broadcastRemoveNode(peer);
-                                }
-                                finally {
-                                    bootstrapClient.shutdown();
+                                    GrpcClient client = new GrpcClient(peer.getIp(), peer.getPort());
+                                    try {
+                                        peer.setReputation(peer.getReputation()+1);
+                                        routingTable.updateNode(peer);
+                                        client.addBid(block);
+                                        System.out.println("Fim do leilão enviado para o nó: " + peer.getId());
+                                    }
+                                    finally {
+                                        client.shutdown();
+                                    }
+
+                                } catch (Exception e) {
+                                    System.err.println("Erro ao enviar o fim de leilão para o nó " + peer.getId() + ": " + e.getMessage());
+                                    GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                                    try {
+                                        bootstrapClient.broadcastRemoveNode(peer);
+                                    }
+                                    finally {
+                                        bootstrapClient.shutdown();
+                                    }
                                 }
                             }
                         }
+
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage("Fim do envio do fim de leilão para todos os nós")
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
+
+                        notifyAllClients(block,3);
+                    }
+                    else {
+                        _node.setReputation(_node.getReputation()-1);
+                        routingTable.updateNode(_node);
+                        SendBidResponse response = SendBidResponse.newBuilder()
+                                .setMessage(result)
+                                .build();
+
+                        responseObserver.onNext(response);
+                        responseObserver.onCompleted();
                     }
 
-                    SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage("Fim do envio do fim de leilão para todos os nós")
-                            .build();
-
-                    responseObserver.onNext(response);
-                    responseObserver.onCompleted();
-
-                    notifyAllClients(block,3);
                 }
-                else {
-                    SendBidResponse response = SendBidResponse.newBuilder()
-                            .setMessage(result)
-                            .build();
-
-                    responseObserver.onNext(response);
-                    responseObserver.onCompleted();
+            }
+            else{
+                GrpcClient bootstrapClient = new GrpcClient(Utils.bootstrapIp, Utils.bootstrapPort);
+                try {
+                    bootstrapClient.broadcastRemoveNode(_node);
                 }
-
+                finally {
+                    bootstrapClient.shutdown();
+                }
             }
 
 
